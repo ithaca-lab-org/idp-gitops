@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(yamllint:*)",
+      "Bash(pre-commit run:*)",
+      "Bash(make check:*)",
+      "Bash(helm template:*)",
+      "Bash(kubectl get:*)",
+      "Bash(kubectl describe:*)",
+      "Bash(kubectl logs:*)",
+      "Bash(argocd app get:*)",
+      "Bash(argocd app list:*)"
+    ],
+    "deny": [
+      "Bash(kubectl delete:*)",
+      "Bash(kubectl apply:*)",
+      "Bash(kubectl patch:*)",
+      "Bash(argocd app sync:*)",
+      "Bash(argocd app delete:*)",
+      "Bash(helm install:*)",
+      "Bash(helm upgrade:*)",
+      "Bash(helm uninstall:*)"
+    ]
+  }
+}

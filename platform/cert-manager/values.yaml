@@ -1,0 +1,21 @@
+# Helm values for cert-manager (see apps/cert-manager.yaml for the pinned chart version).
+crds:
+  enabled: true
+  keep: false # the cluster is rebuilt often; CRDs go with the release
+
+resources:
+  requests:
+    cpu: 25m
+    memory: 64Mi
+
+webhook:
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+
+cainjector:
+  resources:
+    requests:
+      cpu: 10m
+      memory: 64Mi
