@@ -13,7 +13,8 @@ Argo CD app-of-apps for the ithaca Internal Developer Platform. Terraform in [`i
 | Wave | Add-on | Status |
 |---|---|---|
 | 1 | cert-manager | in repo |
-| 2 | Istio ambient + ingress gateway, Tailscale operator | planned |
+| 2 | Tailscale operator (chart 1.102.4; OAuth Secret `tailscale/operator-oauth` is created by `make up` in `idp-infra`, see its `docs/tailscale.md`) | in repo |
+| 2 | Istio ambient + ingress gateway | planned |
 | 3 | echo test app with a Let's Encrypt certificate | planned |
 
 ## How a change reaches the cluster

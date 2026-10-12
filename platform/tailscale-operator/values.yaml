@@ -1,0 +1,34 @@
+# Helm values for the Tailscale operator (see apps/tailscale-operator.yaml for the pinned chart version).
+#
+# OAuth credentials: `oauth.clientId` / `oauth.clientSecret` stay empty on purpose. With both empty
+# the chart renders no Secret and mounts the pre-created Secret `operator-oauth` (keys client_id and
+# client_secret) from this namespace. idp-infra's scripts/bootstrap-secrets.sh creates it on `make up`
+# from Google Secret Manager. Never put credentials here: this repo is public.
+# (No `oauth:` block on purpose; the chart defaults are empty strings.)
+
+# CRDs are chart templates (not Helm's crds/ dir), so they go away with the release on teardown.
+installCRDs: true
+
+operatorConfig:
+  hostname: ithaca-idp-operator # device name on the tailnet
+  defaultTags:
+    - "tag:k8s-operator" # must match the tag on the OAuth client
+  image:
+    # Tag defaults to the chart appVersion (v1.102.4), so the pinned chart pins the image.
+    pullPolicy: IfNotPresent
+  logging: info
+  # Small requests so it fits next to Argo CD and Istio on one e2-standard-4 Spot node.
+  resources:
+    requests:
+      cpu: 10m
+      memory: 64Mi
+
+proxyConfig:
+  # Tag for every proxy Pod the operator creates. tag:k8s-operator must own it in the tailnet policy
+  # (tagOwners), see idp-infra/docs/tailscale.md.
+  defaultTags: "tag:k8s"
+  firewallMode: auto
+
+# The API server stays on GKE's DNS endpoint for now; no tailnet proxy for kubectl.
+apiServerProxyConfig:
+  mode: "false"
