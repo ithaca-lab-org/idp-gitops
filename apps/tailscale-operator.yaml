@@ -1,0 +1,34 @@
+# Wave 2: Tailscale operator, private tailnet access to admin UIs (no public load balancer).
+# Its OAuth credentials are NOT in this repo: `make up` in idp-infra creates the Secret
+# tailscale/operator-oauth from Google Secret Manager (scripts/bootstrap-secrets.sh).
+# Until that Secret exists the operator Pod waits in ContainerCreating, then starts on its own.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tailscale-operator
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: default
+  sources:
+    - repoURL: https://pkgs.tailscale.com/helmcharts
+      chart: tailscale-operator
+      targetRevision: 1.102.4
+      helm:
+        releaseName: tailscale-operator
+        valueFiles:
+          - $values/platform/tailscale-operator/values.yaml
+    - repoURL: https://github.com/ithaca-lab-org/idp-gitops.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: tailscale
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true # the ProxyClass CRD is ~178 KB, too big for client-side apply annotations
