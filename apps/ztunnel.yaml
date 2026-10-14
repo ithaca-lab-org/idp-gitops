@@ -28,3 +28,10 @@ spec:
       selfHeal: true
     syncOptions:
       - ServerSideApply=true
+  # The chart's ZTUNNEL_CPU_LIMIT env var uses resourceFieldRef without a divisor; the API
+  # server defaults it to "0" after creation, which Argo CD reports as OutOfSync forever.
+  ignoreDifferences:
+    - group: apps
+      kind: DaemonSet
+      jqPathExpressions:
+        - .spec.template.spec.containers[]?.env[]?.valueFrom.resourceFieldRef.divisor
