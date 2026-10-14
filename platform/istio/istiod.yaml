@@ -1,0 +1,5 @@
+# istio/istiod chart: ambient mode on GKE. These are the values that passed the
+# idp-infra ambient smoke test (scripts/smoke-ambient.sh, docs/adr/0002).
+profile: ambient
+global:
+  platform: gke

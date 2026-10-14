@@ -19,3 +19,15 @@ cainjector:
     requests:
       cpu: 10m
       memory: 64Mi
+
+# Workload Identity: this Kubernetes service account acts as the Google service account
+# that has dns.admin on the Cloud DNS zone (created in idp-infra, envs/persistent).
+serviceAccount:
+  annotations:
+    iam.gke.io/gcp-service-account: cert-manager-dns01@project-324502ff-9928-4b17-a89.iam.gserviceaccount.com
+
+# Check DNS-01 propagation against public resolvers only; the zone is public and this
+# avoids waiting on in-cluster/NAT resolver behavior.
+extraArgs:
+  - --dns01-recursive-nameservers-only
+  - --dns01-recursive-nameservers=8.8.8.8:53,1.1.1.1:53

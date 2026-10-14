@@ -1,0 +1,23 @@
+# Wave 6: Let's Encrypt issuers, the wildcard certificate and the Istio ingress Gateway.
+# Waits for cert-manager (1) and Istio (2-5). The Application only turns Healthy once the
+# wildcard certificate is issued, which gates the echo app (wave 7).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ingress
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "6"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/ithaca-lab-org/idp-gitops.git
+    targetRevision: main
+    path: workloads/ingress
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: istio-ingress
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

@@ -1,0 +1,22 @@
+# Wave 2: namespace and quota that must exist before any Istio chart. GKE only admits
+# system-node-critical pods (istio-cni, ztunnel) in namespaces with a matching ResourceQuota.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: istio-prereqs
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/ithaca-lab-org/idp-gitops.git
+    targetRevision: main
+    path: workloads/istio-system
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: istio-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

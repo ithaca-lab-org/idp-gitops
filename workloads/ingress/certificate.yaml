@@ -1,0 +1,19 @@
+# Wildcard certificate for every app under apps.ithaca-idp.com.
+# Uses the STAGING issuer on purpose: Let's Encrypt prod allows 5 duplicate certificates
+# per week and every `make down` discards this Secret (docs/adr/0006 in idp-infra).
+# Staging certificates are not trusted by browsers. For a demo, change issuerRef.name to
+# letsencrypt-prod, merge, and switch back afterwards.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: wildcard-apps
+  namespace: istio-ingress
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  secretName: wildcard-apps-tls
+  issuerRef:
+    name: letsencrypt-staging
+    kind: ClusterIssuer
+  dnsNames:
+    - "*.apps.ithaca-idp.com"
