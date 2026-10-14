@@ -1,4 +1,11 @@
-# istio/cni chart: ambient mode on GKE (values proven by the idp-infra smoke test).
+# istio/cni chart: ambient mode on GKE.
 profile: ambient
 global:
   platform: gke
+cni:
+  # Explicit on purpose. The chart only picks /home/kubernetes/bin when the cluster's
+  # version string contains "-gke", and Argo CD renders charts without that suffix, so
+  # autodetection falls back to /opt/cni/bin, which is read-only on GKE nodes
+  # ("read-only file system", istio-cni CrashLoopBackOff). Set under `cni:` because the
+  # GKE platform profile overrides a top-level cniBinDir. scripts/render-check.sh guards this.
+  cniBinDir: /home/kubernetes/bin
