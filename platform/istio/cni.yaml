@@ -1,0 +1,4 @@
+# istio/cni chart: ambient mode on GKE (values proven by the idp-infra smoke test).
+profile: ambient
+global:
+  platform: gke

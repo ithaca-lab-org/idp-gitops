@@ -10,12 +10,24 @@ Argo CD app-of-apps for the ithaca Internal Developer Platform. Terraform in [`i
 
 ## Sync waves
 
-| Wave | Add-on | Status |
+Each wave waits for the previous one to be Healthy. Gaps in the numbering are deliberate.
+
+| Wave | Application | What it does |
 |---|---|---|
-| 1 | cert-manager | in repo |
-| 2 | Tailscale operator (chart 1.102.4; OAuth Secret `tailscale/operator-oauth` is created by `make up` in `idp-infra`, see its `docs/tailscale.md`) | in repo |
-| 2 | Istio ambient + ingress gateway | planned |
-| 3 | echo test app with a Let's Encrypt certificate | planned |
+| 1 | cert-manager | CRDs and controller; Workload Identity for Cloud DNS DNS-01 |
+| 2 | tailscale-operator | Private tailnet access (OAuth Secret created by `make up` in idp-infra) |
+| 2 | istio-prereqs | `istio-system` namespace and the GKE `system-node-critical` ResourceQuota |
+| 3 | istio-base | Istio CRDs |
+| 4 | istiod | Control plane, ambient profile |
+| 5 | istio-cni, ztunnel | Node agents (ambient data plane) |
+| 6 | ingress | Let's Encrypt issuers, wildcard certificate, ingress Gateway on the static IP |
+| 7 | echo | Phase 0 test app at `https://echo.apps.ithaca-idp.com` |
+
+Istio 1.27.1 values are the ones proven by the ambient smoke test in `idp-infra` (`docs/smoke-ambient.md`, ADR 0002).
+
+## TLS
+
+The wildcard certificate for `*.apps.ithaca-idp.com` uses the **Let's Encrypt staging** issuer by default. Production allows only 5 duplicate certificates a week and every `make down` discards the Secret, so a few rebuilds would lock it out. Staging certificates are not trusted by browsers. For a demo, change `issuerRef.name` in `workloads/ingress/certificate.yaml` to `letsencrypt-prod`, merge, and switch back afterwards (see ADR 0006 in `idp-infra`).
 
 ## How a change reaches the cluster
 

@@ -1,0 +1,39 @@
+# ACME DNS-01 through Cloud DNS using Workload Identity (no keys). cert-manager's
+# service account is annotated with the Google service account in
+# platform/cert-manager/values.yaml. Let's Encrypt only sends expiry mail to the contact
+# address; this one is a placeholder, so no mail is received.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-staging
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  acme:
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    email: admin@ithaca-idp.com
+    privateKeySecretRef:
+      name: letsencrypt-staging-account-key
+    solvers:
+      - dns01:
+          cloudDNS:
+            project: project-324502ff-9928-4b17-a89
+            hostedZoneName: ithaca-idp-com
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: admin@ithaca-idp.com
+    privateKeySecretRef:
+      name: letsencrypt-prod-account-key
+    solvers:
+      - dns01:
+          cloudDNS:
+            project: project-324502ff-9928-4b17-a89
+            hostedZoneName: ithaca-idp-com

@@ -1,0 +1,3 @@
+# istio/base chart (see apps/istio-base.yaml for the pinned version). Defaults are fine;
+# Gateway API CRDs are NOT installed here, GKE owns them (gateway_api_config in idp-infra).
+{}

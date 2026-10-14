@@ -1,0 +1,21 @@
+# Wave 7: the Phase 0 echo app at https://echo.apps.ithaca-idp.com.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: echo
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "7"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/ithaca-lab-org/idp-gitops.git
+    targetRevision: main
+    path: workloads/echo
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: echo
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

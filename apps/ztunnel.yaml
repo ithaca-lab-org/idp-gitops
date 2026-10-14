@@ -1,0 +1,30 @@
+# Wave 5: ztunnel, the per-node ambient proxy.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ztunnel
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "5"
+spec:
+  project: default
+  sources:
+    - repoURL: https://istio-release.storage.googleapis.com/charts
+      chart: ztunnel
+      targetRevision: 1.27.1
+      helm:
+        releaseName: ztunnel
+        valueFiles:
+          - $values/platform/istio/ztunnel.yaml
+    - repoURL: https://github.com/ithaca-lab-org/idp-gitops.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: istio-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true

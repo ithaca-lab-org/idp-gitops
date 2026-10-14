@@ -1,0 +1,73 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: echo
+  namespace: echo
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: echo
+  namespace: echo
+  labels: {app: echo}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: echo}
+  template:
+    metadata:
+      labels: {app: echo}
+    spec:
+      serviceAccountName: echo
+      terminationGracePeriodSeconds: 5
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+      containers:
+        - name: echo
+          image: registry.k8s.io/e2e-test-images/agnhost:2.53
+          args: ["netexec", "--http-port=8080"]
+          ports:
+            - {name: http, containerPort: 8080}
+          readinessProbe:
+            httpGet: {path: /hostname, port: 8080}
+            periodSeconds: 5
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: ["ALL"]}
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {memory: 64Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: echo
+  namespace: echo
+  labels: {app: echo}
+spec:
+  type: ClusterIP
+  selector: {app: echo}
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+      protocol: TCP
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: echo
+  namespace: echo
+spec:
+  parentRefs:
+    - name: ingress
+      namespace: istio-ingress
+      sectionName: https
+  hostnames:
+    - echo.apps.ithaca-idp.com
+  rules:
+    - backendRefs:
+        - name: echo
+          port: 80

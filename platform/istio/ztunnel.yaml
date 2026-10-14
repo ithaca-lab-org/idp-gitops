@@ -1,0 +1,3 @@
+# istio/ztunnel chart (values proven by the idp-infra smoke test).
+global:
+  platform: gke

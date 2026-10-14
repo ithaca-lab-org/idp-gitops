@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: echo
+  labels:
+    istio.io/dataplane-mode: ambient # in the mesh: mTLS via ztunnel, no sidecar
+    ithaca.idp/gateway-access: allowed # lets routes here attach to the ingress Gateway
