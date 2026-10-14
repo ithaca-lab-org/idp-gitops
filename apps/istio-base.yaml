@@ -28,3 +28,10 @@ spec:
       selfHeal: true
     syncOptions:
       - ServerSideApply=true
+  # The base chart owns the istiod-default-validator webhook; istiod rewrites its
+  # failurePolicy at runtime, which would leave this Application OutOfSync.
+  ignoreDifferences:
+    - group: admissionregistration.k8s.io
+      kind: ValidatingWebhookConfiguration
+      jqPathExpressions:
+        - .webhooks[]?.failurePolicy

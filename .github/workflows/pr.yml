@@ -26,6 +26,8 @@ jobs:
           yamllint --strict .
       - name: render checks
         run: scripts/check.sh
+      - name: istio render check
+        run: scripts/render-check.sh
 
   workflow-lint:
     runs-on: ubuntu-latest
