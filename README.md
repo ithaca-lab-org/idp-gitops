@@ -27,6 +27,17 @@ Each wave waits for the previous one to be Healthy. Gaps in the numbering are de
 
 Istio 1.27.1 values are the ones proven by the ambient smoke test in `idp-infra` (`docs/smoke-ambient.md`, ADR 0002).
 
+## Exposure
+
+Hybrid: the public ingress carries only what end users need, admin surfaces are tailnet-only.
+
+| Surface | Reached through | Notes |
+|---|---|---|
+| `https://auth.apps.ithaca-idp.com/realms/ithaca/*`, `/resources/*` | Istio ingress Gateway (HTTPRoute `keycloak-public`) | Allow-list: the admin console, `/admin`, the master realm and metrics have no route (404) |
+| Keycloak admin console | Tailscale Ingress `keycloak-admin` | `https://keycloak-admin.<tailnet>.ts.net`, set as `KC_HOSTNAME_ADMIN` |
+| lldap UI | Tailscale Ingress `lldap-admin` | `https://lldap-admin.<tailnet>.ts.net` |
+| Portal (later) | Istio ingress Gateway | `portal.apps.ithaca-idp.com`, route added with the portal Deployment |
+
 ## TLS
 
 The wildcard certificate for `*.apps.ithaca-idp.com` uses the **Let's Encrypt staging** issuer by default. Production allows only 5 duplicate certificates a week and every `make down` discards the Secret, so a few rebuilds would lock it out. Staging certificates are not trusted by browsers. For a demo, change `issuerRef.name` in `workloads/ingress/certificate.yaml` to `letsencrypt-prod`, merge, and switch back afterwards (see ADR 0006 in `idp-infra`).

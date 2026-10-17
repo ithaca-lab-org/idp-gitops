@@ -33,10 +33,19 @@ extraEnv: |
         key: admin-password
   - name: KC_HTTP_ENABLED
     value: "true"
-  - name: KC_HOSTNAME_STRICT
-    value: "false" # set KC_HOSTNAME once Keycloak is exposed (decided with the portal ingress)
+  - name: KC_HOSTNAME # public issuer; fixed so a forged Host header cannot change it
+    value: https://auth.apps.ithaca-idp.com
+  - name: KC_HOSTNAME_ADMIN # tailnet URL of the admin console; optional, see idp-infra docs/identity.md
+    valueFrom:
+      secretKeyRef:
+        name: keycloak-admin
+        key: admin-url
+        optional: true
   - name: JAVA_OPTS_APPEND
     value: "-XX:MaxRAMPercentage=65"
+
+http:
+  relativePath: / # issuer is https://auth.apps.ithaca-idp.com/realms/ithaca
 
 extraVolumes: |
   - name: realm
