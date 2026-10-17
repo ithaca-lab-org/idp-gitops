@@ -1,0 +1,136 @@
+# Realm "ithaca", imported once by Keycloak (--import-realm). No secrets here: the lldap bind
+# password is the placeholder ${LLDAP_BIND_PASSWORD}, filled from the pod environment.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: keycloak-realm
+  namespace: identity
+data:
+  ithaca-realm.json: |
+    {
+      "realm": "ithaca",
+      "enabled": true,
+      "sslRequired": "external",
+      "registrationAllowed": false,
+      "loginWithEmailAllowed": true,
+      "duplicateEmailsAllowed": false,
+      "bruteForceProtected": true,
+      "accessTokenLifespan": 300,
+      "components": {
+        "org.keycloak.storage.UserStorageProvider": [
+          {
+            "name": "lldap",
+            "providerId": "ldap",
+            "subComponents": {
+              "org.keycloak.storage.ldap.mappers.LDAPStorageMapper": [
+                {
+                  "name": "email",
+                  "providerId": "user-attribute-ldap-mapper",
+                  "config": {
+                    "user.model.attribute": ["email"],
+                    "ldap.attribute": ["mail"],
+                    "read.only": ["true"],
+                    "always.read.value.from.ldap": ["false"],
+                    "is.mandatory.in.ldap": ["false"]
+                  }
+                },
+                {
+                  "name": "first name",
+                  "providerId": "user-attribute-ldap-mapper",
+                  "config": {
+                    "user.model.attribute": ["firstName"],
+                    "ldap.attribute": ["givenName"],
+                    "read.only": ["true"],
+                    "always.read.value.from.ldap": ["false"],
+                    "is.mandatory.in.ldap": ["false"]
+                  }
+                },
+                {
+                  "name": "last name",
+                  "providerId": "user-attribute-ldap-mapper",
+                  "config": {
+                    "user.model.attribute": ["lastName"],
+                    "ldap.attribute": ["sn"],
+                    "read.only": ["true"],
+                    "always.read.value.from.ldap": ["false"],
+                    "is.mandatory.in.ldap": ["false"]
+                  }
+                },
+                {
+                  "name": "groups",
+                  "providerId": "group-ldap-mapper",
+                  "config": {
+                    "groups.dn": ["ou=groups,dc=ithaca-idp,dc=com"],
+                    "group.name.ldap.attribute": ["cn"],
+                    "group.object.classes": ["groupOfUniqueNames"],
+                    "membership.ldap.attribute": ["member"],
+                    "membership.attribute.type": ["DN"],
+                    "membership.user.ldap.attribute": ["uid"],
+                    "mode": ["READ_ONLY"],
+                    "user.roles.retrieve.strategy": ["LOAD_GROUPS_BY_MEMBER_ATTRIBUTE"],
+                    "preserve.group.inheritance": ["false"],
+                    "drop.non.existing.groups.during.sync": ["false"]
+                  }
+                }
+              ]
+            },
+            "config": {
+              "enabled": ["true"],
+              "priority": ["0"],
+              "editMode": ["READ_ONLY"],
+              "vendor": ["other"],
+              "connectionUrl": ["ldap://lldap.identity.svc.cluster.local:3890"],
+              "authType": ["simple"],
+              "bindDn": ["uid=admin,ou=people,dc=ithaca-idp,dc=com"],
+              "bindCredential": ["${LLDAP_BIND_PASSWORD}"],
+              "usersDn": ["ou=people,dc=ithaca-idp,dc=com"],
+              "usernameLDAPAttribute": ["uid"],
+              "rdnLDAPAttribute": ["uid"],
+              "uuidLDAPAttribute": ["uid"],
+              "userObjectClasses": ["person"],
+              "searchScope": ["1"],
+              "pagination": ["true"],
+              "importEnabled": ["true"],
+              "syncRegistrations": ["false"],
+              "fullSyncPeriod": ["-1"],
+              "changedSyncPeriod": ["-1"]
+            }
+          }
+        ]
+      },
+      "clients": [
+        {
+          "clientId": "idp-portal",
+          "name": "IDP portal",
+          "enabled": true,
+          "publicClient": true,
+          "standardFlowEnabled": true,
+          "implicitFlowEnabled": false,
+          "directAccessGrantsEnabled": false,
+          "serviceAccountsEnabled": false,
+          "redirectUris": [
+            "https://portal.apps.ithaca-idp.com/*",
+            "http://localhost:8080/*"
+          ],
+          "webOrigins": ["https://portal.apps.ithaca-idp.com", "http://localhost:8080"],
+          "attributes": {
+            "pkce.code.challenge.method": "S256",
+            "post.logout.redirect.uris": "https://portal.apps.ithaca-idp.com/*##http://localhost:8080/*"
+          },
+          "protocolMappers": [
+            {
+              "name": "groups",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-group-membership-mapper",
+              "config": {
+                "claim.name": "groups",
+                "full.path": "false",
+                "id.token.claim": "true",
+                "access.token.claim": "true",
+                "userinfo.token.claim": "true"
+              }
+            }
+          ]
+        }
+      ]
+    }

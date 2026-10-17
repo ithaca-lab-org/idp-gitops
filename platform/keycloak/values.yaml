@@ -1,0 +1,69 @@
+# keycloakx 7.4.0 (Keycloak 26.8.1, official quay.io image). Single replica, external Postgres.
+nameOverride: keycloak
+fullnameOverride: keycloak
+replicas: 1
+
+command:
+  - /opt/keycloak/bin/kc.sh
+  - start
+  - --http-port=8080
+  - --import-realm # only creates realm "ithaca" if it does not exist (the DB is rebuilt on make up)
+
+database:
+  vendor: postgres
+  hostname: keycloak-db
+  port: 5432
+  database: keycloak
+  username: keycloak
+  existingSecret: keycloak-db
+  existingSecretKey: password
+
+extraEnv: |
+  - name: KC_BOOTSTRAP_ADMIN_USERNAME
+    value: admin
+  - name: KC_BOOTSTRAP_ADMIN_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: keycloak-admin
+        key: password
+  - name: LLDAP_BIND_PASSWORD # substituted into realm.json at import
+    valueFrom:
+      secretKeyRef:
+        name: lldap
+        key: admin-password
+  - name: KC_HTTP_ENABLED
+    value: "true"
+  - name: KC_HOSTNAME_STRICT
+    value: "false" # set KC_HOSTNAME once Keycloak is exposed (decided with the portal ingress)
+  - name: JAVA_OPTS_APPEND
+    value: "-XX:MaxRAMPercentage=65"
+
+extraVolumes: |
+  - name: realm
+    configMap:
+      name: keycloak-realm
+extraVolumeMounts: |
+  - name: realm
+    mountPath: /opt/keycloak/data/import
+    readOnly: true
+
+podSecurityContext:
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+securityContext:
+  runAsUser: 1000
+  runAsNonRoot: true
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: [ALL]
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 1Gi
+  limits:
+    memory: 1536Mi
+
+dbchecker:
+  enabled: false # the namespace is outside the ambient mesh, and Keycloak retries the DB itself

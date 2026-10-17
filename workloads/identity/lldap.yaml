@@ -1,0 +1,85 @@
+# lldap: lightweight LDAP (business-unit groups and users) that Keycloak federates.
+# Admin and signing secrets come from the Secret identity/lldap, created by
+# idp-infra/scripts/bootstrap-secrets.sh from Secret Manager. Pods wait for it.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: lldap-data
+  namespace: identity
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lldap
+  namespace: identity
+  labels:
+    app.kubernetes.io/name: lldap
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate # SQLite on a ReadWriteOnce volume: never two pods at once
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: lldap
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: lldap
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: lldap
+          image: lldap/lldap:2026-09-22-debian-rootless
+          ports:
+            - {name: ldap, containerPort: 3890}
+            - {name: http, containerPort: 17170}
+          env:
+            - {name: LLDAP_LDAP_BASE_DN, value: "dc=ithaca-idp,dc=com"}
+            - name: LLDAP_LDAP_USER_PASS
+              valueFrom: {secretKeyRef: {name: lldap, key: admin-password}}
+            - name: LLDAP_JWT_SECRET
+              valueFrom: {secretKeyRef: {name: lldap, key: jwt-secret}}
+            - name: LLDAP_KEY_SEED
+              valueFrom: {secretKeyRef: {name: lldap, key: key-seed}}
+          readinessProbe:
+            tcpSocket: {port: ldap}
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket: {port: ldap}
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {memory: 256Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: data, mountPath: /data}
+      volumes:
+        - name: data
+          persistentVolumeClaim: {claimName: lldap-data}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: lldap
+  namespace: identity
+spec:
+  selector:
+    app.kubernetes.io/name: lldap
+  ports:
+    - {name: ldap, port: 3890, targetPort: ldap}
+    - {name: http, port: 17170, targetPort: http}

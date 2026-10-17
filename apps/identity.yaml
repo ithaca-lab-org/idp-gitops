@@ -1,0 +1,23 @@
+# Wave 8: identity namespace, lldap (LDAP) and the Keycloak Postgres. Needs the Secrets
+# identity/lldap and identity/keycloak-db from idp-infra/scripts/bootstrap-secrets.sh;
+# until they exist the Pods wait in CreateContainerConfigError, then start on their own.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: identity
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "8"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/ithaca-lab-org/idp-gitops.git
+    targetRevision: main
+    path: workloads/identity
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: identity
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
