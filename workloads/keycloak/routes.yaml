@@ -1,0 +1,26 @@
+# Public exposure is an allow-list: only the ithaca realm's OIDC endpoints and static assets are
+# routed. Everything else (the admin console, /admin REST, the master realm, metrics) has no route,
+# so the Gateway answers 404. Admins reach those through the Tailscale Ingress (tailscale-ingress.yaml).
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: keycloak-public
+  namespace: identity
+spec:
+  parentRefs:
+    - name: ingress
+      namespace: istio-ingress
+      sectionName: https
+  hostnames:
+    - auth.apps.ithaca-idp.com
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /realms/ithaca
+        - path:
+            type: PathPrefix
+            value: /resources
+      backendRefs:
+        - name: keycloak-http
+          port: 80
