@@ -1,0 +1,18 @@
+# Private admin access: https://keycloak-admin.<tailnet>.ts.net (Tailscale certificate), reachable
+# only from devices on the tailnet. Needs the Tailscale operator (wave 2) and the tag:k8s ACL grant
+# described in idp-infra/docs/tailscale.md.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: keycloak-admin
+  namespace: identity
+spec:
+  ingressClassName: tailscale
+  defaultBackend:
+    service:
+      name: keycloak-http
+      port:
+        number: 80
+  tls:
+    - hosts:
+        - keycloak-admin

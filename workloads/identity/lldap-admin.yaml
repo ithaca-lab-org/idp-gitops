@@ -1,0 +1,16 @@
+# Private access to the lldap web UI (users and groups): https://lldap-admin.<tailnet>.ts.net
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: lldap-admin
+  namespace: identity
+spec:
+  ingressClassName: tailscale
+  defaultBackend:
+    service:
+      name: lldap
+      port:
+        number: 17170
+  tls:
+    - hosts:
+        - lldap-admin
