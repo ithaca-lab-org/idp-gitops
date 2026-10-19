@@ -42,6 +42,9 @@ extraEnv: |
   - name: JAVA_OPTS_APPEND
     value: "-XX:MaxRAMPercentage=65"
 
+proxy:
+  mode: xforwarded # the Istio gateway (Envoy) sends X-Forwarded-Proto, not the RFC 7239 Forwarded header
+
 http:
   relativePath: / # issuer is https://auth.apps.ithaca-idp.com/realms/ithaca
 
