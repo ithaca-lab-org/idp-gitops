@@ -24,6 +24,17 @@ data:
             "subComponents": {
               "org.keycloak.storage.ldap.mappers.LDAPStorageMapper": [
                 {
+                  "name": "username",
+                  "providerId": "user-attribute-ldap-mapper",
+                  "config": {
+                    "user.model.attribute": ["username"],
+                    "ldap.attribute": ["uid"],
+                    "read.only": ["true"],
+                    "always.read.value.from.ldap": ["false"],
+                    "is.mandatory.in.ldap": ["true"]
+                  }
+                },
+                {
                   "name": "email",
                   "providerId": "user-attribute-ldap-mapper",
                   "config": {
