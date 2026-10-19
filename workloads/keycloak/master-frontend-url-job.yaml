@@ -1,0 +1,66 @@
+# Keycloak builds the master realm's OIDC endpoints from the global KC_HOSTNAME (the public host),
+# where the master realm is deliberately not routed, so admin console login 404s. A realm's
+# Frontend URL overrides the global hostname for that realm only. The master realm cannot come
+# from the realm import (it already exists), so this PostSync hook sets it with Keycloak's own
+# admin CLI, using the in-cluster Secrets (values are never printed). Idempotent; it skips when the
+# optional admin-url key is absent (no tailnet-domain secret). Keep the image tag in step with
+# platform/keycloak/values.yaml.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: keycloak-master-frontend-url
+  namespace: identity
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 6
+  ttlSecondsAfterFinished: 900
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: keycloak-config
+    spec:
+      restartPolicy: OnFailure
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: kcadm
+          image: quay.io/keycloak/keycloak:26.8.1
+          command: [/bin/bash, -c]
+          args:
+            - |
+              set -euo pipefail
+              if [ -z "${ADMIN_URL:-}" ]; then
+                echo "no admin-url in Secret keycloak-admin; leaving the master realm Frontend URL unset"
+                exit 0
+              fi
+              KCADM="/opt/keycloak/bin/kcadm.sh --config /tmp/kcadm.config"
+              for i in $(seq 1 60); do
+                if $KCADM config credentials --server http://keycloak-http --realm master \
+                     --user admin --password "$ADMIN_PASSWORD" >/dev/null 2>&1; then
+                  $KCADM update realms/master -s "attributes.frontendUrl=${ADMIN_URL}"
+                  echo "master realm Frontend URL set to ${ADMIN_URL}"
+                  exit 0
+                fi
+                echo "keycloak not ready yet (${i}/60)"; sleep 5
+              done
+              echo "gave up waiting for Keycloak" >&2
+              exit 1
+          env:
+            - name: ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: keycloak-admin, key: password}
+            - name: ADMIN_URL
+              valueFrom:
+                secretKeyRef: {name: keycloak-admin, key: admin-url, optional: true}
+          resources:
+            requests: {cpu: 50m, memory: 256Mi}
+            limits: {memory: 512Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
