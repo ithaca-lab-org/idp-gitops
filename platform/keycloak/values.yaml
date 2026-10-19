@@ -31,8 +31,6 @@ extraEnv: |
       secretKeyRef:
         name: lldap
         key: admin-password
-  - name: KC_HTTP_ENABLED
-    value: "true"
   - name: KC_HOSTNAME # public issuer; fixed so a forged Host header cannot change it
     value: https://auth.apps.ithaca-idp.com
   - name: KC_HOSTNAME_ADMIN # tailnet URL of the admin console; optional, see idp-infra docs/identity.md
