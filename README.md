@@ -34,7 +34,7 @@ Hybrid: the public ingress carries only what end users need, admin surfaces are 
 
 | Surface | Reached through | Notes |
 |---|---|---|
-| `https://auth.apps.ithaca-idp.com/realms/ithaca/*`, `/resources/*` | Istio ingress Gateway (HTTPRoute `keycloak-public`) | Allow-list: the admin console, `/admin`, the master realm and metrics have no route (404) |
+| `https://auth.apps.ithaca-idp.com/realms/ithaca/*`, `/resources/*` | Istio ingress Gateway (HTTPRoute `keycloak-public`) | Allow-list: the admin console, `/admin`, the master realm (except the two static 3rd-party-cookie check pages the admin console iframes) and metrics have no route (404) |
 | Keycloak admin console | Tailscale Ingress `keycloak-admin` | `https://keycloak-admin.<tailnet>.ts.net`, set as `KC_HOSTNAME_ADMIN` |
 | lldap UI | Tailscale Ingress `lldap-admin` | `https://lldap-admin.<tailnet>.ts.net` |
 | Portal (later) | Istio ingress Gateway | `portal.apps.ithaca-idp.com`, route added with the portal Deployment |

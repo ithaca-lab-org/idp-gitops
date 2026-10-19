@@ -1,5 +1,5 @@
 # Public exposure is an allow-list: only the ithaca realm's OIDC endpoints and static assets are
-# routed. Everything else (the admin console, /admin REST, the master realm, metrics) has no route,
+# routed, plus two static master-realm pages (see below). Everything else (the admin console, /admin REST, the master realm, metrics) has no route,
 # so the Gateway answers 404. Admins reach those through the Tailscale Ingress (tailscale-ingress.yaml).
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
@@ -21,6 +21,19 @@ spec:
         - path:
             type: PathPrefix
             value: /resources
+      backendRefs:
+        - name: keycloak-http
+          port: 80
+    # The admin console (served on the tailnet host) loads its 3rd-party-cookie check iframe from
+    # Keycloak's frontend URL, which is this public host. Those two pages are static (no API calls,
+    # no data), so exactly these paths are allowed; the rest of the master realm stays unrouted.
+    - matches:
+        - path:
+            type: Exact
+            value: /realms/master/protocol/openid-connect/3p-cookies/step1.html
+        - path:
+            type: Exact
+            value: /realms/master/protocol/openid-connect/3p-cookies/step2.html
       backendRefs:
         - name: keycloak-http
           port: 80
