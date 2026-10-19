@@ -24,6 +24,7 @@ Each wave waits for the previous one to be Healthy. Gaps in the numbering are de
 | 7 | echo | Phase 0 test app at `https://echo.apps.ithaca-idp.com` |
 | 8 | identity | `identity` namespace, lldap (LDAP) and the Keycloak Postgres; Secrets from `bootstrap-secrets.sh` |
 | 9 | keycloak | Keycloak (official image, codecentric keycloakx chart), realm `ithaca` federated to lldap, `idp-portal` OIDC client |
+| 10 | identity-admin-access | Tailscale Ingresses for the Keycloak admin console and lldap UI (needs MagicDNS and HTTPS certificates enabled on the tailnet) |
 
 Istio 1.27.1 values are the ones proven by the ambient smoke test in `idp-infra` (`docs/smoke-ambient.md`, ADR 0002).
 

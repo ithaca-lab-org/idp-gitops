@@ -1,0 +1,23 @@
+# Wave 10: private admin access to Keycloak and lldap through Tailscale Ingresses. Separate from
+# the identity and keycloak Applications on purpose: an Ingress only turns Healthy once the tailnet
+# has HTTPS certificates enabled and the proxy has joined, and that must never block Keycloak itself.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: identity-admin-access
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/ithaca-lab-org/idp-gitops.git
+    targetRevision: main
+    path: workloads/identity-admin-access
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: identity
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
