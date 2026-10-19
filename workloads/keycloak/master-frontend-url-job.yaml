@@ -39,15 +39,16 @@ spec:
                 echo "no admin-url in Secret keycloak-admin; leaving the master realm Frontend URL unset"
                 exit 0
               fi
-              KCADM="/opt/keycloak/bin/kcadm.sh --config /tmp/kcadm.config"
+              KCADM=/opt/keycloak/bin/kcadm.sh
+              CFG=/tmp/kcadm.config
               for i in $(seq 1 60); do
-                if $KCADM config credentials --server http://keycloak-http --realm master \
-                     --user admin --password "$ADMIN_PASSWORD" >/dev/null 2>&1; then
-                  $KCADM update realms/master -s "attributes.frontendUrl=${ADMIN_URL}"
+                if out="$($KCADM config credentials --config "$CFG" --server http://keycloak-http \
+                     --realm master --user admin --password "$ADMIN_PASSWORD" 2>&1)"; then
+                  $KCADM update realms/master --config "$CFG" -s "attributes.frontendUrl=${ADMIN_URL}"
                   echo "master realm Frontend URL set to ${ADMIN_URL}"
                   exit 0
                 fi
-                echo "keycloak not ready yet (${i}/60)"; sleep 5
+                echo "login failed (${i}/60): $(printf '%s' "$out" | tail -n 1)"; sleep 5
               done
               echo "gave up waiting for Keycloak" >&2
               exit 1
