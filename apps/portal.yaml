@@ -1,0 +1,22 @@
+# Wave 11: portal-api (Keycloak OIDC login) at https://portal.apps.ithaca-idp.com.
+# Needs Keycloak (wave 9) and the Secret idp-system/portal-session from bootstrap-secrets.sh.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: portal
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "11"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/ithaca-lab-org/idp-gitops.git
+    targetRevision: main
+    path: workloads/portal
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: idp-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: idp-system
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    ithaca.idp/gateway-access: "allowed" # lets HTTPRoutes here attach to the ingress Gateway

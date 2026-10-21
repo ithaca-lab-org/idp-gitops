@@ -1,0 +1,124 @@
+# portal-api: Keycloak OIDC login for the IDP portal. Session key comes from the Secret
+# idp-system/portal-session (idp-infra/scripts/bootstrap-secrets.sh). The image is built and
+# pushed by ithaca-lab-org/idp-portal; bump the tag and digest below with a PR to deploy a new version (the digest wins; the tag is for humans).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: portal-api
+  namespace: idp-system
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: portal-api
+  namespace: idp-system
+  labels:
+    app.kubernetes.io/name: portal-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: portal-api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: portal-api
+    spec:
+      serviceAccountName: portal-api
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: portal-api
+          image: us-central1-docker.pkg.dev/project-324502ff-9928-4b17-a89/idp/portal-api:cccd5f724319c5155ef9ecab8597441666b03f9e@sha256:08ed7174a2d79ef9751537d8879314cb66b7e67a8a1906986a4e66d57c188059
+          ports:
+            - {name: http, containerPort: 8080}
+          env:
+            - {name: LISTEN_ADDR, value: ":8080"}
+            - {name: OIDC_ISSUER, value: "https://auth.apps.ithaca-idp.com/realms/ithaca"}
+            - {name: OIDC_CLIENT_ID, value: idp-portal}
+            - {name: OIDC_REDIRECT_URL, value: "https://portal.apps.ithaca-idp.com/auth/callback"}
+            - {name: OIDC_EXTRA_CA_FILE, value: /etc/idp/ca/staging-ca.pem}
+            - name: SESSION_KEY
+              valueFrom:
+                secretKeyRef: {name: portal-session, key: session-key}
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            initialDelaySeconds: 5
+            periodSeconds: 20
+          resources:
+            requests: {cpu: 20m, memory: 32Mi}
+            limits: {memory: 128Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: staging-ca, mountPath: /etc/idp/ca, readOnly: true}
+      volumes:
+        - name: staging-ca
+          configMap:
+            name: staging-ca
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: portal-api
+  namespace: idp-system
+spec:
+  selector:
+    app.kubernetes.io/name: portal-api
+  ports:
+    - {name: http, port: 80, targetPort: http}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: portal
+  namespace: idp-system
+spec:
+  parentRefs:
+    - name: ingress
+      namespace: istio-ingress
+      sectionName: https
+  hostnames:
+    - portal.apps.ithaca-idp.com
+  rules:
+    - backendRefs:
+        - name: portal-api
+          port: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: idp-system
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: portal-api-from-gateway
+  namespace: idp-system
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: portal-api
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-ingress
+      ports:
+        - {protocol: TCP, port: 8080}
