@@ -1,6 +1,6 @@
 # portal-api: Keycloak OIDC login for the IDP portal. Session key comes from the Secret
 # idp-system/portal-session (idp-infra/scripts/bootstrap-secrets.sh). The image is built and
-# pushed by ithaca-lab-org/idp-portal; bump the tag below with a PR to deploy a new version.
+# pushed by ithaca-lab-org/idp-portal; bump the tag and digest below with a PR to deploy a new version (the digest wins; the tag is for humans).
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -35,7 +35,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: portal-api
-          image: us-central1-docker.pkg.dev/project-324502ff-9928-4b17-a89/idp/portal-api:REPLACE_WITH_GIT_SHA
+          image: us-central1-docker.pkg.dev/project-324502ff-9928-4b17-a89/idp/portal-api:cccd5f724319c5155ef9ecab8597441666b03f9e@sha256:08ed7174a2d79ef9751537d8879314cb66b7e67a8a1906986a4e66d57c188059
           ports:
             - {name: http, containerPort: 8080}
           env:
