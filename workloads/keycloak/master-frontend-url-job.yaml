@@ -43,7 +43,7 @@ spec:
               CFG=/tmp/kcadm.config
               for i in $(seq 1 60); do
                 if out="$($KCADM config credentials --config "$CFG" --server http://keycloak-http \
-                     --realm master --user admin --password "$ADMIN_PASSWORD" 2>&1)"; then
+                     --realm master --user admin 2>&1)"; then
                   $KCADM update realms/master --config "$CFG" -s "attributes.frontendUrl=${ADMIN_URL}"
                   echo "master realm Frontend URL set to ${ADMIN_URL}"
                   exit 0
@@ -53,7 +53,7 @@ spec:
               echo "gave up waiting for Keycloak" >&2
               exit 1
           env:
-            - name: ADMIN_PASSWORD
+            - name: KC_CLI_PASSWORD # read by kcadm; keeps the password out of the process arguments
               valueFrom:
                 secretKeyRef: {name: keycloak-admin, key: password}
             - name: ADMIN_URL

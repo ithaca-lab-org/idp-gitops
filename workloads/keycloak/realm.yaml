@@ -119,14 +119,11 @@ data:
           "implicitFlowEnabled": false,
           "directAccessGrantsEnabled": false,
           "serviceAccountsEnabled": false,
-          "redirectUris": [
-            "https://portal.apps.ithaca-idp.com/*",
-            "http://localhost:8080/*"
-          ],
-          "webOrigins": ["https://portal.apps.ithaca-idp.com", "http://localhost:8080"],
+          "redirectUris": ["https://portal.apps.ithaca-idp.com/auth/callback"],
+          "webOrigins": ["https://portal.apps.ithaca-idp.com"],
           "attributes": {
             "pkce.code.challenge.method": "S256",
-            "post.logout.redirect.uris": "https://portal.apps.ithaca-idp.com/*##http://localhost:8080/*"
+            "post.logout.redirect.uris": "https://portal.apps.ithaca-idp.com/"
           },
           "protocolMappers": [
             {
