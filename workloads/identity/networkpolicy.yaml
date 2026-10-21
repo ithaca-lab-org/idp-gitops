@@ -47,7 +47,7 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: keycloak-http-from-cluster
+  name: keycloak-http-from-gateway-and-admin
   namespace: identity
 spec:
   podSelector:
@@ -55,8 +55,15 @@ spec:
       app.kubernetes.io/name: keycloak
   policyTypes: [Ingress]
   ingress:
+    # Only the ingress gateway (public OIDC), the Tailscale proxies (admin) and this namespace
+    # (the master-frontend-url Job) may reach Keycloak. Other pods must not bypass the gateway
+    # allow-list or spoof X-Forwarded-* headers (proxy.mode xforwarded trusts them).
     - from:
-        - namespaceSelector: {}
+        - namespaceSelector:
+            matchExpressions:
+              - key: kubernetes.io/metadata.name
+                operator: In
+                values: [istio-ingress, tailscale, identity]
       ports:
         - {protocol: TCP, port: 8080}
 ---
