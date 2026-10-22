@@ -1,0 +1,34 @@
+# Wave 12: the TeamNamespace operator. Sources 2-4 come from the idp-portal repo at the SAME commit
+# as the image tag in workloads/idp-operator/idp-operator.yaml: bump all four together.
+# The admission policy is applied in the same sync as the operator; it only affects its ServiceAccount.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: idp-operator
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "12"
+spec:
+  project: default
+  sources:
+    - repoURL: https://github.com/ithaca-lab-org/idp-gitops.git
+      targetRevision: main
+      path: workloads/idp-operator
+    - repoURL: https://github.com/ithaca-lab-org/idp-portal.git
+      targetRevision: fc2c9f3c6c1e0279ed142c97f9d660dd7690773f
+      path: operator/config/crd/bases
+    - repoURL: https://github.com/ithaca-lab-org/idp-portal.git
+      targetRevision: fc2c9f3c6c1e0279ed142c97f9d660dd7690773f
+      path: operator/config/rbac
+    - repoURL: https://github.com/ithaca-lab-org/idp-portal.git
+      targetRevision: fc2c9f3c6c1e0279ed142c97f9d660dd7690773f
+      path: operator/config/policy
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: idp-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true # the TeamNamespace CRD is large

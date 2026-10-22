@@ -1,0 +1,85 @@
+# idp-operator: reconciles TeamNamespace resources (cluster-scoped CR) into namespaces.
+# The CRD, ClusterRole/Role and the admission policy come from the idp-portal repo, pinned to the
+# same commit as the image (see apps/idp-operator.yaml). The ServiceAccount name is part of the
+# admission policy (idp-system/idp-operator): do not rename it, or the policy silently stops applying.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: idp-operator
+  namespace: idp-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: idp-operator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: idp-operator
+subjects:
+  - kind: ServiceAccount
+    name: idp-operator
+    namespace: idp-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: idp-operator
+  namespace: idp-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: idp-operator
+subjects:
+  - kind: ServiceAccount
+    name: idp-operator
+    namespace: idp-system
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: idp-operator
+  namespace: idp-system
+  labels:
+    app.kubernetes.io/name: idp-operator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: idp-operator
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: idp-operator
+    spec:
+      serviceAccountName: idp-operator
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: manager
+          image: us-central1-docker.pkg.dev/project-324502ff-9928-4b17-a89/idp/idp-operator:fc2c9f3c6c1e0279ed142c97f9d660dd7690773f@sha256:45677873584899b69e6703428133e1dbb6dfa18b0202caab92e68270a65b78b1
+          args:
+            - --leader-elect=true
+            - --health-probe-bind-address=:8081
+            - --metrics-bind-address=:8443
+          ports:
+            - {name: metrics, containerPort: 8443}
+            - {name: probes, containerPort: 8081}
+          readinessProbe:
+            httpGet: {path: /readyz, port: probes}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /healthz, port: probes}
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests: {cpu: 50m, memory: 128Mi}
+            limits: {memory: 256Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
