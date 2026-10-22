@@ -35,7 +35,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: portal-api
-          image: us-central1-docker.pkg.dev/project-324502ff-9928-4b17-a89/idp/portal-api:cccd5f724319c5155ef9ecab8597441666b03f9e@sha256:08ed7174a2d79ef9751537d8879314cb66b7e67a8a1906986a4e66d57c188059
+          image: us-central1-docker.pkg.dev/project-324502ff-9928-4b17-a89/idp/portal-api:fc2c9f3c6c1e0279ed142c97f9d660dd7690773f@sha256:76020316c66ae315cddfaf588e64f6a3ed8a0389926de53fdb527572501040e8
           ports:
             - {name: http, containerPort: 8080}
           env:

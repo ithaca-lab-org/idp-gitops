@@ -61,7 +61,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: manager
-          image: us-central1-docker.pkg.dev/project-324502ff-9928-4b17-a89/idp/idp-operator:REPLACE_WITH_GIT_SHA
+          image: us-central1-docker.pkg.dev/project-324502ff-9928-4b17-a89/idp/idp-operator:fc2c9f3c6c1e0279ed142c97f9d660dd7690773f@sha256:45677873584899b69e6703428133e1dbb6dfa18b0202caab92e68270a65b78b1
           args:
             - --leader-elect=true
             - --health-probe-bind-address=:8081
