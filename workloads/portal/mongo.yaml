@@ -1,0 +1,117 @@
+# MongoDB for the portal's order history: one instance, authentication on, only the portal-api
+# pods may connect. Passwords come from the Secret idp-system/portal-mongo (bootstrap-secrets.sh):
+# root-password only initialises the database and creates the portal user; the API uses
+# app-password (readWrite on the idp database, nothing else).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: portal-mongo-init
+  namespace: idp-system
+data:
+  10-app-user.sh: |
+    #!/bin/bash
+    set -euo pipefail
+    mongosh --quiet -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" \
+      --authenticationDatabase admin idp --eval '
+        db.createUser({user: "portal", pwd: process.env.APP_PASSWORD,
+                       roles: [{role: "readWrite", db: "idp"}]})'
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: portal-mongo
+  namespace: idp-system
+  labels:
+    app.kubernetes.io/name: portal-mongo
+spec:
+  serviceName: portal-mongo
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: portal-mongo
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: portal-mongo
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: mongo
+          image: mongo:8.0@sha256:4a4ab5d4834207389e0d7270fac988e21ffedccecba77991a552f755df229907
+          args: ["--auth", "--bind_ip_all", "--wiredTigerCacheSizeGB", "0.25"]
+          ports:
+            - {name: mongo, containerPort: 27017}
+          env:
+            - {name: MONGO_INITDB_ROOT_USERNAME, value: root}
+            - name: MONGO_INITDB_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: portal-mongo, key: root-password}
+            - name: APP_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: portal-mongo, key: app-password}
+          readinessProbe:
+            tcpSocket: {port: mongo}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket: {port: mongo}
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {memory: 512Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: data, mountPath: /data/db}
+            - {name: init, mountPath: /docker-entrypoint-initdb.d, readOnly: true}
+      volumes:
+        - name: init
+          configMap:
+            name: portal-mongo-init
+            defaultMode: 0555
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: 2Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: portal-mongo
+  namespace: idp-system
+spec:
+  selector:
+    app.kubernetes.io/name: portal-mongo
+  ports:
+    - {name: mongo, port: 27017, targetPort: mongo}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: portal-mongo-from-portal-api
+  namespace: idp-system
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: portal-mongo
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: portal-api
+      ports:
+        - {protocol: TCP, port: 27017}

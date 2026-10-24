@@ -6,7 +6,7 @@ kind: ServiceAccount
 metadata:
   name: portal-api
   namespace: idp-system
-automountServiceAccountToken: false
+automountServiceAccountToken: true # the order API calls the Kubernetes API (see portal-rbac.yaml)
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -26,7 +26,7 @@ spec:
         app.kubernetes.io/name: portal-api
     spec:
       serviceAccountName: portal-api
-      automountServiceAccountToken: false
+      automountServiceAccountToken: true
       securityContext:
         runAsNonRoot: true
         runAsUser: 65532
@@ -47,6 +47,11 @@ spec:
             - name: SESSION_KEY
               valueFrom:
                 secretKeyRef: {name: portal-session, key: session-key}
+            - name: MONGO_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: portal-mongo, key: app-password}
+            - {name: MONGO_URI, value: "mongodb://portal:$(MONGO_PASSWORD)@portal-mongo.idp-system.svc:27017/idp?authSource=idp"}
+            - {name: MONGO_DB, value: idp}
           readinessProbe:
             httpGet: {path: /healthz, port: http}
             periodSeconds: 10
