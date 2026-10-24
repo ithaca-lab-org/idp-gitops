@@ -11,6 +11,7 @@ data:
   10-app-user.sh: |
     #!/bin/bash
     set -euo pipefail
+    APP_PASSWORD="$(cat /run/secrets/portal-mongo/app-password)" \
     mongosh --quiet -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" \
       --authenticationDatabase admin idp --eval '
         db.createUser({user: "portal", pwd: process.env.APP_PASSWORD,
@@ -50,12 +51,8 @@ spec:
             - {name: mongo, containerPort: 27017}
           env:
             - {name: MONGO_INITDB_ROOT_USERNAME, value: root}
-            - name: MONGO_INITDB_ROOT_PASSWORD
-              valueFrom:
-                secretKeyRef: {name: portal-mongo, key: root-password}
-            - name: APP_PASSWORD
-              valueFrom:
-                secretKeyRef: {name: portal-mongo, key: app-password}
+            # read from a mounted file so the passwords are not in the pod's environment
+            - {name: MONGO_INITDB_ROOT_PASSWORD_FILE, value: /run/secrets/portal-mongo/root-password}
           readinessProbe:
             tcpSocket: {port: mongo}
             initialDelaySeconds: 10
@@ -73,11 +70,16 @@ spec:
           volumeMounts:
             - {name: data, mountPath: /data/db}
             - {name: init, mountPath: /docker-entrypoint-initdb.d, readOnly: true}
+            - {name: secrets, mountPath: /run/secrets/portal-mongo, readOnly: true}
       volumes:
         - name: init
           configMap:
             name: portal-mongo-init
             defaultMode: 0555
+        - name: secrets
+          secret:
+            secretName: portal-mongo
+            defaultMode: 0440
   volumeClaimTemplates:
     - metadata:
         name: data

@@ -1,5 +1,5 @@
-# The portal creates and reads TeamNamespace resources, nothing else: no update, no delete, no
-# access to any other resource. The operator does the rest, and the admission policy confines it.
+# The portal creates and reads single TeamNamespace resources, nothing else: no list or watch (they
+# would expose every owner's email and order id), no update, no delete, no other resource. The operator does the rest, and the admission policy confines it.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -7,7 +7,7 @@ metadata:
 rules:
   - apiGroups: ["idp.ithaca-idp.com"]
     resources: ["teamnamespaces"]
-    verbs: ["get", "list", "watch", "create"]
+    verbs: ["get", "create"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
