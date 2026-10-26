@@ -41,6 +41,10 @@ Hybrid: the public ingress carries only what end users need, admin surfaces are 
 | lldap UI | Tailscale Ingress `lldap-admin` | `https://lldap-admin.<tailnet>.ts.net` |
 | Portal (later) | Istio ingress Gateway | `portal.apps.ithaca-idp.com`, route added with the portal Deployment |
 
+## Seeded dev users
+
+`workloads/identity/lldap-seed.yaml` is an Argo CD post-sync Job that creates three groups and seven fixture users in lldap on every rebuild (lldap's own bootstrap script, definitions in ConfigMaps). The password comes from Secret Manager through `idp-infra`, never from Git. It never deletes users you create by hand. Remove the file to stop seeding.
+
 ## TLS
 
 The wildcard certificate for `*.apps.ithaca-idp.com` uses the **Let's Encrypt staging** issuer by default. Production allows only 5 duplicate certificates a week and every `make down` discards the Secret, so a few rebuilds would lock it out. Staging certificates are not trusted by browsers. For a demo, change `issuerRef.name` in `workloads/ingress/certificate.yaml` to `letsencrypt-prod`, merge, and switch back afterwards (see ADR 0006 in `idp-infra`).
