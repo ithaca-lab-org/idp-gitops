@@ -1,0 +1,135 @@
+# Dev fixture: groups, users and memberships created in lldap on every rebuild by lldap's own
+# bootstrap script (/app/bootstrap.sh in the lldap image). Idempotent: it creates or updates what is
+# listed here and never deletes users or groups you create by hand (DO_CLEANUP=false).
+#
+# The users' password is NOT in Git (the repo is public and the Keycloak login is on the internet):
+# all of them read it from the Secret identity/lldap-seed-users, created by idp-infra
+# scripts/bootstrap-secrets.sh from Secret Manager (see idp-infra docs/identity.md to set your own).
+# Remove this file to stop seeding. It is a post-sync hook, so it runs when the identity app
+# syncs, which includes every fresh cluster.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lldap-seed-groups
+  namespace: identity
+data:
+  cloudspend-bu.json: |
+    {"name": "cloudspend-bu"}
+  supplychain-bu.json: |
+    {"name": "supplychain-bu"}
+  marketing-northeast-bu.json: |
+    {"name": "marketing-northeast-bu"}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lldap-seed-users
+  namespace: identity
+data:
+  user01.json: |
+    {"id": "user01", "email": "gmote@goliathshop.com", "displayName": "gary_mote", "firstName": "gary", "lastName": "mote",
+     "password_file": "/run/secrets/lldap-seed-users/password", "groups": ["cloudspend-bu", "supplychain-bu"]}
+  user02.json: |
+    {"id": "user02", "email": "ikawabata@goliathshop.com", "displayName": "ikuka_kawabata", "firstName": "ikuka", "lastName": "kawabata",
+     "password_file": "/run/secrets/lldap-seed-users/password", "groups": ["cloudspend-bu"]}
+  user03.json: |
+    {"id": "user03", "email": "gbhattacharjee@goliathshop.com", "displayName": "guatham_bhatt", "firstName": "guatham", "lastName": "bhattacharjee",
+     "password_file": "/run/secrets/lldap-seed-users/password", "groups": ["supplychain-bu"]}
+  user04.json: |
+    {"id": "user04", "email": "klee@goliathshop.com", "displayName": "kai_lee", "firstName": "kai", "lastName": "lee",
+     "password_file": "/run/secrets/lldap-seed-users/password", "groups": ["supplychain-bu"]}
+  user05.json: |
+    {"id": "user05", "email": "yglasovitch@goliathshop.com", "displayName": "yuri_glasovitch", "firstName": "yuri", "lastName": "glasovitch",
+     "password_file": "/run/secrets/lldap-seed-users/password", "groups": ["marketing-northeast-bu", "cloudspend-bu"]}
+  user06.json: |
+    {"id": "user06", "email": "wmendes@goliathshop.com", "displayName": "wagner_mendes", "firstName": "wagner", "lastName": "mendes",
+     "password_file": "/run/secrets/lldap-seed-users/password", "groups": ["marketing-northeast-bu", "cloudspend-bu"]}
+  user07.json: |
+    {"id": "user07", "email": "fadebayo@goliathshop.com", "displayName": "femi_adebayo", "firstName": "femi", "lastName": "adebayo",
+     "password_file": "/run/secrets/lldap-seed-users/password", "groups": ["marketing-northeast-bu", "cloudspend-bu"]}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: lldap-seed
+  namespace: identity
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 6
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: lldap-seed
+    spec:
+      restartPolicy: OnFailure
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: seed
+          image: lldap/lldap:2026-09-22-debian-rootless # keep in step with lldap.yaml
+          command: [/app/bootstrap.sh]
+          env:
+            - {name: LLDAP_URL, value: "http://lldap.identity.svc.cluster.local:17170"}
+            - {name: LLDAP_ADMIN_USERNAME, value: admin}
+            - {name: LLDAP_ADMIN_PASSWORD_FILE, value: /run/secrets/lldap-admin/admin-password}
+            - {name: USER_CONFIGS_DIR, value: /bootstrap/user-configs}
+            - {name: GROUP_CONFIGS_DIR, value: /bootstrap/group-configs}
+            - {name: DO_CLEANUP, value: "false"}
+          resources:
+            requests: {cpu: 20m, memory: 64Mi}
+            limits: {memory: 128Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: groups, mountPath: /bootstrap/group-configs, readOnly: true}
+            - {name: users, mountPath: /bootstrap/user-configs, readOnly: true}
+            - {name: admin, mountPath: /run/secrets/lldap-admin, readOnly: true}
+            - {name: seed-password, mountPath: /run/secrets/lldap-seed-users, readOnly: true}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: groups
+          configMap:
+            name: lldap-seed-groups
+        - name: users
+          configMap:
+            name: lldap-seed-users
+        - name: admin
+          secret:
+            secretName: lldap
+            defaultMode: 0440
+            items:
+              - {key: admin-password, path: admin-password}
+        - name: seed-password
+          secret:
+            secretName: lldap-seed-users
+            defaultMode: 0440
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: lldap-ui-from-seed-job
+  namespace: identity
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: lldap
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: lldap-seed
+      ports:
+        - {protocol: TCP, port: 17170}
