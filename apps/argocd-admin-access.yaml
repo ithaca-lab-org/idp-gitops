@@ -1,0 +1,23 @@
+# Wave 10: private admin access to the Argo CD UI through a Tailscale Ingress. A separate
+# Application on purpose, like identity-admin-access: the Ingress only turns Healthy once the
+# tailnet has HTTPS certificates enabled and the proxy has joined, and that must not block anything else.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: argocd-admin-access
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/ithaca-lab-org/idp-gitops.git
+    targetRevision: main
+    path: workloads/argocd-admin-access
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

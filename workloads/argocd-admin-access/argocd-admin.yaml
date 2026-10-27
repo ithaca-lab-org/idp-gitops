@@ -1,0 +1,18 @@
+# Private access to the Argo CD UI: https://argocd-admin.<tailnet>.ts.net
+# Port 443 (named https) makes the Tailscale proxy speak HTTPS to argocd-server, which serves TLS
+# itself; plain HTTP would be redirected to HTTPS in a loop.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: argocd-admin
+  namespace: argocd
+spec:
+  ingressClassName: tailscale
+  defaultBackend:
+    service:
+      name: argocd-server
+      port:
+        number: 443
+  tls:
+    - hosts:
+        - argocd-admin
