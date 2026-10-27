@@ -1,0 +1,57 @@
+# notifier: pulls order events from Pub/Sub and emails the owner. Email sending is OFF
+# (NOTIFIER_SEND_EMAIL=false): it only logs what it would send. To turn it on, after the Resend
+# domain is verified and the key is in Secret Manager (idp-infra docs/order-events.md): set
+# NOTIFIER_SEND_EMAIL to "true" and EMAIL_FROM below. The image is built by ithaca-lab-org/idp-portal;
+# bump the tag and digest with a PR (the digest wins; the tag is for humans).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: notifier
+  namespace: idp-system
+  annotations:
+    # Workload Identity: subscribe-only on order-events-notifier (idp-infra modules/order-events)
+    iam.gke.io/gcp-service-account: notifier@project-324502ff-9928-4b17-a89.iam.gserviceaccount.com
+automountServiceAccountToken: false # it never talks to the Kubernetes API
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notifier
+  namespace: idp-system
+  labels:
+    app.kubernetes.io/name: notifier
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: notifier
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: notifier
+    spec:
+      serviceAccountName: notifier
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: notifier
+          image: us-central1-docker.pkg.dev/project-324502ff-9928-4b17-a89/idp/portal-notifier:TAG@sha256:DIGEST # placeholder until idp-portal #17 is built
+          env:
+            - {name: PUBSUB_PROJECT, value: project-324502ff-9928-4b17-a89}
+            - {name: PUBSUB_SUBSCRIPTION, value: order-events-notifier}
+            - {name: NOTIFIER_SEND_EMAIL, value: "false"}
+            - name: RESEND_API_KEY
+              valueFrom:
+                secretKeyRef: {name: notifier-resend, key: api-key, optional: true}
+          resources:
+            requests: {cpu: 10m, memory: 32Mi}
+            limits: {memory: 128Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}

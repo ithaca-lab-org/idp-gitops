@@ -6,6 +6,9 @@ kind: ServiceAccount
 metadata:
   name: portal-api
   namespace: idp-system
+  annotations:
+    # Workload Identity: publish-only on the order-events topic (idp-infra modules/order-events)
+    iam.gke.io/gcp-service-account: portal-api@project-324502ff-9928-4b17-a89.iam.gserviceaccount.com
 automountServiceAccountToken: true # the order API calls the Kubernetes API (see portal-rbac.yaml)
 ---
 apiVersion: apps/v1
@@ -52,6 +55,8 @@ spec:
                 secretKeyRef: {name: portal-mongo, key: app-password}
             - {name: MONGO_URI, value: "mongodb://portal:$(MONGO_PASSWORD)@portal-mongo.idp-system.svc:27017/idp?authSource=idp"}
             - {name: MONGO_DB, value: idp}
+            - {name: PUBSUB_PROJECT, value: project-324502ff-9928-4b17-a89}
+            - {name: PUBSUB_TOPIC, value: order-events}
           readinessProbe:
             httpGet: {path: /healthz, port: http}
             periodSeconds: 10
