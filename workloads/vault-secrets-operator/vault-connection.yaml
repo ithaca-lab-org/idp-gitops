@@ -1,0 +1,18 @@
+# Shared connection to the in-cluster Vault. Tenant VaultAuths (created by the idp-operator) point
+# at it with `vaultConnectionRef: vault-secrets-operator/idp-vault`. VSO 1.6 resolves a
+# "<namespace>/<name>" ref in any namespace and has no allow-list for VaultConnections; that is
+# fine because this object only holds the address (no credential). What a tenant may read is
+# decided by its VaultAuth (its own ServiceAccount) and the Vault role/policy (ns-reader).
+# Named, not `default`: a VaultAuth without a ref fails instead of silently using it.
+# Applied in the same sync as the VSO CRDs; skip the dry run on the first sync of a fresh cluster.
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultConnection
+metadata:
+  name: idp-vault
+  namespace: vault-secrets-operator
+  annotations:
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+spec:
+  # Plain HTTP inside the cluster until the listener gets TLS (platform/vault/values.yaml TODO).
+  address: http://vault.vault.svc.cluster.local:8200
+  skipTLSVerify: false

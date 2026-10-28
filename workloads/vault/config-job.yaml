@@ -6,7 +6,9 @@
 #      (30 min TTL, not renewable, no default policy, policy vault-bootstrap). The Secret is
 #      mounted as an OPTIONAL volume, so the pod starts without it and the kubelet fills it in when it appears;
 #   3. with that token: audit to stdout, kv-v2 at kv/, the demo secret, policy vso-demo,
-#      Kubernetes auth with role vso-demo; marks completion by making the kubernetes/ auth mount
+#      Kubernetes auth with role vso-demo, the per-namespace policies ns-reader (templated on the
+#      caller's ServiceAccount namespace) and ns-purge with roles ns-reader and idp-operator-purge;
+#      marks completion by making the kubernetes/ auth mount
 #      visible on the (unauthenticated) UI login page; then revokes its own token;
 #   4. a second container deletes Secret vault/vault-bootstrap (RBAC: that one Secret only).
 # Every call stays inside policy vault-bootstrap (sys/audit/*, sys/mounts[/*], sys/auth[/*],
@@ -15,6 +17,8 @@
 # default policy) and the kv CLI's mount preflight.
 # Idempotent: when the token is gone or dead and the completion mark is present it exits 0. If the
 # mark is missing it never exits 0, so the Secret is never deleted before Vault is configured.
+# Steps added later only reach a Vault that is configured from scratch (every `make up`); an
+# already configured Vault is left as it is (README "Re-runs and failures").
 # The token is never printed (no set -x, CLI output goes to /dev/null).
 apiVersion: v1
 kind: ServiceAccount
@@ -178,6 +182,63 @@ spec:
                 token_policies=vso-demo \
                 token_ttl=10m \
                 token_max_ttl=1h >/dev/null
+
+              # Per-namespace access (README "Per-namespace access"). The policy path is templated on
+              # the alias metadata of THIS mount, addressed by its accessor (auth_kubernetes_<hex>).
+              # `vault auth list` is GET sys/auth (read, allowed); exactly one kubernetes mount exists.
+              echo "per-namespace policies and roles: ns-reader, ns-purge, idp-operator-purge"
+              ACC="$(vault auth list -format=json | grep -o '"auth_kubernetes_[0-9a-f]*"' | tr -d '"' | sort -u)"
+              case "$ACC" in
+                auth_kubernetes_?*) ;;
+                *) echo "could not determine the kubernetes/ auth mount accessor" >&2; exit 1 ;;
+              esac
+              if [ "$(printf '%s\n' "$ACC" | wc -l)" -ne 1 ]; then
+                echo "more than one kubernetes auth mount accessor found" >&2; exit 1
+              fi
+              NS="{{identity.entity.aliases.${ACC}.metadata.service_account_namespace}}"
+              # A caller reads only kv/<its own namespace>/*. If the template cannot be resolved
+              # (no entity, alias or key, or the value contains * or +), Vault drops that path rule,
+              # so it grants nothing. The deny rules cover a resolved-but-empty value. The token
+              # self-paths replace the default policy (the role sets token_no_default_policy): VSO
+              # renews (renew-self), checks (lookup-self) and revokes (revoke-self) its token.
+              printf '%s\n' \
+                "path \"kv/data/${NS}/*\" {" '  capabilities = ["read"]' '}' \
+                "path \"kv/metadata/${NS}/*\" {" '  capabilities = ["read", "list"]' '}' \
+                'path "kv/data//*" {' '  capabilities = ["deny"]' '}' \
+                'path "kv/metadata//*" {' '  capabilities = ["deny"]' '}' \
+                'path "auth/token/lookup-self" {' '  capabilities = ["read"]' '}' \
+                'path "auth/token/renew-self" {' '  capabilities = ["update"]' '}' \
+                'path "auth/token/revoke-self" {' '  capabilities = ["update"]' '}' \
+                > /tmp/ns-reader.hcl
+              vault policy write ns-reader /tmp/ns-reader.hcl >/dev/null
+              # KV v2: DELETE kv/metadata/<key> removes the key and all its versions; LIST walks a
+              # namespace's tree. No read of secret data, no kv/data, no kv/destroy.
+              printf '%s\n' \
+                'path "kv/metadata/*" {' '  capabilities = ["list", "delete"]' '}' \
+                'path "auth/token/lookup-self" {' '  capabilities = ["read"]' '}' \
+                'path "auth/token/renew-self" {' '  capabilities = ["update"]' '}' \
+                'path "auth/token/revoke-self" {' '  capabilities = ["update"]' '}' \
+                > /tmp/ns-purge.hcl
+              vault policy write ns-purge /tmp/ns-purge.hcl >/dev/null
+              # Any namespace, one ServiceAccount name: the namespace is enforced by the policy
+              # template, not by the role. '*' is quoted so the shell never globs it.
+              vault write auth/kubernetes/role/ns-reader \
+                bound_service_account_names=vault-reader \
+                'bound_service_account_namespaces=*' \
+                alias_name_source=serviceaccount_uid \
+                audience=vault \
+                token_policies=ns-reader \
+                token_no_default_policy=true \
+                token_ttl=10m \
+                token_max_ttl=1h >/dev/null
+              vault write auth/kubernetes/role/idp-operator-purge \
+                bound_service_account_names=idp-operator \
+                bound_service_account_namespaces=idp-system \
+                audience=vault \
+                token_policies=ns-purge \
+                token_no_default_policy=true \
+                token_ttl=5m \
+                token_max_ttl=15m >/dev/null
 
               # Completion mark (see configured() above). Must stay the last config step.
               vault write sys/auth/kubernetes/tune listing_visibility=unauth >/dev/null

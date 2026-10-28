@@ -36,8 +36,10 @@ hooks:
 tests:
   enabled: false
 
-# No cluster-wide default connection: each namespace declares its own VaultConnection/VaultAuth,
-# so access stays per-namespace and least privilege (see workloads/vault-demo).
+# No `default` connection or auth method: every VaultAuth names its connection explicitly. Tenant
+# namespaces share the named VaultConnection vault-secrets-operator/idp-vault
+# (workloads/vault-secrets-operator) and log in with their own ServiceAccount vault-reader;
+# vault-demo keeps its own VaultConnection. See workloads/vault/README.md "Per-namespace access".
 defaultVaultConnection:
   enabled: false
 defaultAuthMethod:
