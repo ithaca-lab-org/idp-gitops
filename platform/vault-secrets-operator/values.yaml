@@ -1,0 +1,37 @@
+# hashicorp/vault-secrets-operator chart 1.6.2. One controller for the whole cluster; it reads
+# from Vault with each namespace's own VaultAuth (Kubernetes auth) and writes plain Secrets.
+controller:
+  replicas: 1
+  manager:
+    image:
+      repository: hashicorp/vault-secrets-operator
+      tag: "1.6.2@sha256:8f77bc42ac47a4a1b2d1bb8b3a398fc53c19b3ce626002824a87ceb6cf91e5ad" # digest wins
+    resources:
+      requests: {cpu: 10m, memory: 64Mi}
+      limits: {memory: 128Mi}
+  kubeRbacProxy:
+    resources:
+      requests: {cpu: 5m, memory: 32Mi}
+      limits: {memory: 64Mi}
+  podSecurityContext:
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities: {drop: [ALL]}
+
+# CRDs come from the chart's crds/ directory, applied by Argo CD with ServerSideApply. The chart's
+# own CRD-upgrade Job is a Helm pre-upgrade hook, which Argo CD would run as a PreSync Job on every
+# sync; Argo CD already keeps the CRDs current, so it is off.
+hooks:
+  upgradeCRDs:
+    enabled: false
+
+# No cluster-wide default connection: each namespace declares its own VaultConnection/VaultAuth,
+# so access stays per-namespace and least privilege (see workloads/vault-demo).
+defaultVaultConnection:
+  enabled: false
+defaultAuthMethod:
+  enabled: false

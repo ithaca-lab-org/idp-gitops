@@ -1,0 +1,29 @@
+# Wave 10: VSO demo (namespace vault-demo, Secret hello synced from Vault). A separate Application so
+# it can never wedge anything: the VSO custom resources have no Argo CD health check, so they are
+# Healthy as soon as they are applied, and VSO keeps retrying until Vault is configured. If VSO's
+# CRDs are not there yet (wave 8 still syncing), the dry run is skipped and the sync retries.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: vault-demo
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/ithaca-lab-org/idp-gitops.git
+    targetRevision: main
+    path: workloads/vault-demo
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: vault-demo
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - SkipDryRunOnMissingResource=true
+    retry:
+      limit: 10
+      backoff: {duration: 30s, factor: 2, maxDuration: 5m}

@@ -1,0 +1,19 @@
+# Private access to the Vault UI and API: https://vault-admin.<tailnet>.ts.net (Tailscale certificate),
+# reachable only from devices on the tailnet. Plain HTTP from the proxy to Vault inside the cluster
+# (see platform/vault/values.yaml, TLS later). The Tailscale proxies are allowed in by
+# workloads/vault/networkpolicy.yaml. Add vault-admin to TS_CLEANUP_HOSTNAMES in idp-infra.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: vault-admin
+  namespace: vault
+spec:
+  ingressClassName: tailscale
+  defaultBackend:
+    service:
+      name: vault # chart Service on 8200 (the UI is served by Vault itself; vault-ui is the same port)
+      port:
+        number: 8200
+  tls:
+    - hosts:
+        - vault-admin

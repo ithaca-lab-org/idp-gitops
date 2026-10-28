@@ -1,0 +1,60 @@
+# VSO demo: Vault kv/vault-demo/hello (key message, written by the vault-config Job) is synced into
+# the Kubernetes Secret vault-demo/hello every 60 s. VSO logs in with Kubernetes auth as the
+# ServiceAccount vault-demo/vault-demo (role vso-demo, policy vso-demo: read that one path only).
+# Until Vault is configured, VSO marks the VaultStaticSecret with an error and retries by itself.
+# Check: kubectl -n vault-demo get secret hello -o jsonpath='{.data.message}' | base64 -d
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vault-demo
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+---
+# The identity VSO presents to Vault (a short-lived TokenRequest token, audience "vault").
+# No pod uses it, so no token is mounted anywhere.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: vault-demo
+  namespace: vault-demo
+automountServiceAccountToken: false
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultConnection
+metadata:
+  name: vault
+  namespace: vault-demo
+spec:
+  # Plain HTTP inside the cluster until the listener gets TLS (platform/vault/values.yaml TODO).
+  address: http://vault.vault.svc.cluster.local:8200
+  skipTLSVerify: false
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultAuth
+metadata:
+  name: vault-demo
+  namespace: vault-demo
+spec:
+  vaultConnectionRef: vault
+  method: kubernetes
+  mount: kubernetes
+  kubernetes:
+    role: vso-demo
+    serviceAccount: vault-demo
+    audiences: [vault] # must match the role's audience
+    tokenExpirationSeconds: 600
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata:
+  name: hello
+  namespace: vault-demo
+spec:
+  vaultAuthRef: vault-demo
+  mount: kv
+  type: kv-v2
+  path: vault-demo/hello
+  refreshAfter: 60s
+  destination:
+    name: hello
+    create: true

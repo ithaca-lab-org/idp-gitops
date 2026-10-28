@@ -1,0 +1,44 @@
+# Wave 7: Vault (official hashicorp/vault chart), one server with Raft storage, Cloud KMS auto-unseal,
+# UI on, no injector. Wave 7 because it only needs the network layer: Istio CNI/ztunnel (5) are on
+# the nodes before any non-mesh pod relies on Dataplane V2 policies, cert-manager (1) is there for
+# the planned listener TLS, and it does not depend on identity (8-10). It runs before VSO (8) and
+# before the portal (11), which will read secrets through VSO later.
+# It cannot wedge the platform: the readiness probe is Ready while Vault is sealed or uninitialized,
+# so this app turns Healthy without a human step, and the one-time configuration is a PostSync Job
+# (workloads/vault/config-job.yaml) that only waits inside this app's own sync. Admin access
+# (Tailscale) and the VSO demo are separate Applications, like identity-admin-access.
+# Fresh on every `make up`: `vault operator init` is done by idp-infra (bootstrap script), which
+# also writes Secret vault/vault-bootstrap for the Job. See workloads/vault/README.md.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: vault
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "7"
+spec:
+  project: default
+  sources:
+    - repoURL: https://helm.releases.hashicorp.com
+      chart: vault
+      targetRevision: 0.34.1 # Vault 2.0.4
+      helm:
+        releaseName: vault
+        valueFiles:
+          - $values/platform/vault/values.yaml
+    - repoURL: https://github.com/ithaca-lab-org/idp-gitops.git
+      targetRevision: main
+      ref: values
+    - repoURL: https://github.com/ithaca-lab-org/idp-gitops.git
+      targetRevision: main
+      path: workloads/vault # README.md is ignored (directory sources read only YAML/JSON)
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: vault
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    retry: # a failed PostSync Job (e.g. bootstrap never ran) is retried, then left for a human
+      limit: 2
+      backoff: {duration: 1m, factor: 2, maxDuration: 10m}

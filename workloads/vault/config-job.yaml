@@ -1,0 +1,205 @@
+# vault-config: one-shot configuration of a freshly initialized Vault (PostSync hook of the vault app).
+# Flow and failure handling: workloads/vault/README.md. Summary:
+#   1. wait until Vault is initialized and unsealed (`vault status` exit 0);
+#   2. wait for the root token in Secret vault/vault-bootstrap (created by the idp-infra bootstrap
+#      script right after `vault operator init`; mounted here as an OPTIONAL volume, so the pod
+#      starts without it and the kubelet fills it in when the Secret appears);
+#   3. with the root token: audit to stdout, kv-v2 at kv/, the demo secret, policy vso-demo,
+#      Kubernetes auth with role vso-demo; marks completion by making the kubernetes/ auth mount
+#      visible on the (unauthenticated) UI login page; then revokes the root token;
+#   4. a second container deletes Secret vault/vault-bootstrap (RBAC: that one Secret only).
+# Idempotent: when the token is gone and the completion mark is present it exits 0. If the mark is
+# missing it never exits 0 without a token, so the Secret is never deleted before Vault is configured.
+# The token is never printed (no set -x, CLI output that could carry it goes to /dev/null).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: vault-config
+  namespace: vault
+automountServiceAccountToken: false # only the cleanup container gets a (projected) token
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: vault-bootstrap-cleanup
+  namespace: vault
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    resourceNames: [vault-bootstrap]
+    verbs: [get, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: vault-bootstrap-cleanup
+  namespace: vault
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: vault-bootstrap-cleanup
+subjects:
+  - kind: ServiceAccount
+    name: vault-config
+    namespace: vault
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: vault-config
+  namespace: vault
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 6
+  activeDeadlineSeconds: 3600 # covers a slow `make up`; the vault app's sync stays Running meanwhile
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: vault-config # allowed to reach Vault by networkpolicy.yaml
+    spec:
+      serviceAccountName: vault-config
+      automountServiceAccountToken: false
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 100
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: configure
+          # Same image as the server (platform/vault/values.yaml): it ships the vault CLI and /bin/sh.
+          image: hashicorp/vault:2.0.4@sha256:5be49781ecf78bfe775c5309c6a4d9f4e9e040b6c885c99eb2b12fb69855e1a2
+          command: [/bin/sh, -c]
+          args:
+            - |
+              set -eu
+              TOKEN_FILE=/run/secrets/vault-bootstrap/root-token
+              unset VAULT_TOKEN || true
+
+              # Completion mark, readable without a token: the last config step makes the
+              # kubernetes/ auth mount visible to unauthenticated clients (the UI login page).
+              configured() {
+                vault read -format=json sys/internal/ui/mounts 2>/dev/null | grep -q '"kubernetes/"'
+              }
+
+              echo "waiting for Vault to be initialized and unsealed"
+              until vault status >/dev/null 2>&1; do sleep 10; done
+              echo "Vault is initialized and unsealed"
+
+              while [ ! -s "$TOKEN_FILE" ]; do
+                if configured; then
+                  echo "Vault is already configured and there is no bootstrap token: nothing to do"
+                  exit 0
+                fi
+                echo "waiting for Secret vault/vault-bootstrap"
+                sleep 15
+              done
+
+              VAULT_TOKEN="$(cat "$TOKEN_FILE")"
+              export VAULT_TOKEN
+              if ! vault token lookup >/dev/null 2>&1; then
+                unset VAULT_TOKEN
+                if configured; then
+                  echo "bootstrap token already revoked and Vault configured; removing the leftover Secret"
+                  exit 0
+                fi
+                echo "bootstrap token is not valid and Vault is not configured (see workloads/vault/README.md)" >&2
+                exit 1
+              fi
+
+              echo "audit device: file to stdout"
+              vault audit list -format=json 2>/dev/null | grep -q '"file/"' \
+                || vault audit enable file file_path=stdout >/dev/null
+
+              echo "secrets engine: kv-v2 at kv/"
+              vault secrets list -format=json | grep -q '"kv/"' \
+                || vault secrets enable -path=kv -version=2 kv >/dev/null
+
+              echo "demo secret: kv/vault-demo/hello"
+              vault kv put -mount=kv vault-demo/hello message="hello from vault" >/dev/null
+
+              echo "policy: vso-demo (read kv/data/vault-demo/hello only)"
+              printf '%s\n' 'path "kv/data/vault-demo/hello" {' '  capabilities = ["read"]' '}' > /tmp/vso-demo.hcl
+              vault policy write vso-demo /tmp/vso-demo.hcl >/dev/null
+
+              echo "auth method: kubernetes"
+              vault auth list -format=json | grep -q '"kubernetes/"' \
+                || vault auth enable kubernetes >/dev/null
+              # Vault runs in the cluster: it uses its own ServiceAccount token (vault/vault, bound to
+              # system:auth-delegator by the chart) for TokenReview, and the in-pod CA.
+              vault write auth/kubernetes/config kubernetes_host=https://kubernetes.default.svc >/dev/null
+              vault write auth/kubernetes/role/vso-demo \
+                bound_service_account_names=vault-demo \
+                bound_service_account_namespaces=vault-demo \
+                audience=vault \
+                token_policies=vso-demo \
+                token_ttl=10m \
+                token_max_ttl=1h >/dev/null
+
+              # Completion mark (see configured() above). Must stay the last config step.
+              vault auth tune -listing-visibility=unauth kubernetes/ >/dev/null
+
+              echo "revoking the root token"
+              vault token revoke -self >/dev/null
+              unset VAULT_TOKEN
+              echo "Vault configured"
+          env:
+            - {name: VAULT_ADDR, value: "http://vault.vault.svc.cluster.local:8200"}
+            - {name: HOME, value: /tmp} # no token helper file in a read-only home
+          resources:
+            requests: {cpu: 10m, memory: 32Mi}
+            limits: {memory: 128Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: bootstrap, mountPath: /run/secrets/vault-bootstrap, readOnly: true}
+            - {name: tmp, mountPath: /tmp}
+      containers:
+        - name: cleanup
+          image: registry.k8s.io/kubectl:v1.36.6@sha256:0650805141538d13ccbb6bb9e0dd647bc415bc002898357970211c4d47224396
+          command: [kubectl]
+          args: [delete, secret, vault-bootstrap, --namespace=vault, --ignore-not-found, --wait=false]
+          env:
+            - {name: HOME, value: /tmp}
+          resources:
+            requests: {cpu: 10m, memory: 32Mi}
+            limits: {memory: 128Mi}
+          securityContext:
+            runAsUser: 65532
+            runAsGroup: 65532
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: kube-api, mountPath: /var/run/secrets/kubernetes.io/serviceaccount, readOnly: true}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: bootstrap
+          secret:
+            secretName: vault-bootstrap
+            optional: true
+            defaultMode: 0440
+        - name: tmp
+          emptyDir: {medium: Memory, sizeLimit: 8Mi}
+        # The ServiceAccount token, CA and namespace for in-cluster kubectl, mounted into the
+        # cleanup container only (the configure container never sees a Kubernetes credential).
+        - name: kube-api
+          projected:
+            defaultMode: 0440 # group fsGroup 1000, which every container in the pod has
+            sources:
+              - serviceAccountToken: {path: token, expirationSeconds: 600}
+              - configMap:
+                  name: kube-root-ca.crt
+                  items:
+                    - {key: ca.crt, path: ca.crt}
+              - downwardAPI:
+                  items:
+                    - path: namespace
+                      fieldRef: {fieldPath: metadata.namespace}
