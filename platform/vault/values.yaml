@@ -55,7 +55,7 @@ server:
     name: vault
     annotations:
       # Workload Identity: encrypt/decrypt on the vault-unseal key only (idp-infra modules/vault-unseal)
-      iam.gke.io/gcp-service-account: vault@project-324502ff-9928-4b17-a89.iam.gserviceaccount.com
+      iam.gke.io/gcp-service-account: vault-server@project-324502ff-9928-4b17-a89.iam.gserviceaccount.com
 
   statefulSet:
     securityContext:

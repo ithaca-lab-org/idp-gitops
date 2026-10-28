@@ -18,7 +18,7 @@ Design: `IDP_NOTES.md` section 10. Vault is rebuilt empty on every `make up` (si
 2. `make up` in `idp-infra` runs `scripts/bootstrap-secrets.sh`: `kubectl exec` into `vault-0`,
    `vault operator init` (recovery keys go to Secret Manager, never to Git). Vault unseals itself
    through Cloud KMS (`seal "gcpckms"`, key ring `idp`, key `vault-unseal`, Workload Identity as
-   `vault@`). The script then issues a short-lived **bootstrap token** (orphan, 30 min TTL, not
+   `vault-server@`). The script then issues a short-lived **bootstrap token** (orphan, 30 min TTL, not
    renewable, no default policy, policy `vault-bootstrap`) and stores only that token in the Secret
    `vault/vault-bootstrap` (key `token`).
 3. The `vault-config` PostSync Job (`config-job.yaml`) waits for Vault to be unsealed and for the
