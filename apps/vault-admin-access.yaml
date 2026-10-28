@@ -1,0 +1,23 @@
+# Wave 10: private access to the Vault UI and API through a Tailscale Ingress. A separate
+# Application on purpose, like identity-admin-access: the Ingress only turns Healthy once the
+# tailnet has HTTPS certificates enabled and the proxy has joined, and that must not block Vault.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: vault-admin-access
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/ithaca-lab-org/idp-gitops.git
+    targetRevision: main
+    path: workloads/vault-admin-access
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: vault
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

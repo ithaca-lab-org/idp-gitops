@@ -1,0 +1,75 @@
+# Default-deny ingress in the vault namespace, then only the flows that are needed.
+# `kubectl exec` (used by the idp-infra bootstrap script for `vault operator init`) goes through the
+# API server and the kubelet, not the pod network, so it needs no rule here.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: vault
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: vault-api
+  namespace: vault
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: vault
+      component: server
+  policyTypes: [Ingress]
+  ingress:
+    # VSO (reads secrets for the namespaces it serves).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: vault-secrets-operator
+      ports:
+        - {protocol: TCP, port: 8200}
+    # Only the Tailscale proxy of the vault-admin Ingress, not every proxy in the tailscale
+    # namespace. The operator copies these labels onto its proxy pods (tailscale operator
+    # cmd/k8s-operator: childResourceLabels, "sync StatefulSet labels to Pod").
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: tailscale
+          podSelector:
+            matchLabels:
+              tailscale.com/managed: "true"
+              tailscale.com/parent-resource: vault-admin
+              tailscale.com/parent-resource-ns: vault
+              tailscale.com/parent-resource-type: ingress
+      ports:
+        - {protocol: TCP, port: 8200}
+    # The vault-config PostSync Job in this namespace.
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: vault-config
+      ports:
+        - {protocol: TCP, port: 8200}
+---
+# Raft and request forwarding between Vault servers. Unused with one replica; kept so scaling to
+# three replicas does not silently break.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: vault-cluster
+  namespace: vault
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: vault
+      component: server
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: vault
+              component: server
+      ports:
+        - {protocol: TCP, port: 8201}

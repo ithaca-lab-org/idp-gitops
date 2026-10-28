@@ -1,0 +1,120 @@
+# hashicorp/vault chart 0.34.1 (Vault 2.0.4): one Vault server with Raft integrated storage,
+# auto-unsealed by Cloud KMS. Rebuilt empty on every `make up` (no Raft snapshots yet); the
+# idp-infra bootstrap script runs `vault operator init` once the pod is up, and the vault-config
+# PostSync Job (workloads/vault/config-job.yaml) does the rest. See workloads/vault/README.md.
+global:
+  # Plain HTTP inside the cluster, fenced by the NetworkPolicies in workloads/vault.
+  # TODO(ADR): TLS on the listener with a cert-manager Certificate (in-cluster CA) before any
+  # real secret goes in; VSO's VaultConnection then sets caCertSecretRef.
+  tlsDisable: true
+
+injector:
+  enabled: false # VSO delivers secrets; no Agent sidecar injector (IDP_NOTES 10.7)
+
+csi:
+  enabled: false
+
+ui:
+  enabled: true # served by Vault itself on 8200; reached through the vault-admin Tailscale Ingress
+
+server:
+  image:
+    repository: hashicorp/vault
+    # Tag for humans, digest (multi-arch index) wins. Keep in step with workloads/vault/config-job.yaml.
+    tag: "2.0.4@sha256:5be49781ecf78bfe775c5309c6a4d9f4e9e040b6c885c99eb2b12fb69855e1a2"
+
+  # Small enough to share one e2-standard-4 Spot node with the rest of the platform.
+  resources:
+    requests: {cpu: 50m, memory: 128Mi}
+    limits: {memory: 256Mi}
+
+  # Ready while uninitialized or sealed (204 instead of 501/503), so the StatefulSet turns Healthy
+  # before `vault operator init` and Argo CD never waits on a human step. The vault-config Job
+  # checks the real state with `vault status`.
+  readinessProbe:
+    enabled: true
+    path: "/v1/sys/health?standbyok=true&sealedcode=204&uninitcode=204"
+  livenessProbe:
+    enabled: false # a sealed Vault must not be restarted in a loop; the KMS seal unseals it on start
+
+  # 1 GiB is plenty for the demo KV and the Raft log.
+  dataStorage:
+    enabled: true
+    size: 1Gi
+  auditStorage:
+    enabled: false # audit goes to stdout (Cloud Logging), enabled by the vault-config Job
+
+  # Kubernetes auth uses Vault's own ServiceAccount token as the TokenReview credential:
+  # this ClusterRoleBinding gives vault/vault system:auth-delegator (TokenReview +
+  # SubjectAccessReview only). No long-lived reviewer token is stored in Vault.
+  authDelegator:
+    enabled: true
+
+  serviceAccount:
+    create: true
+    name: vault
+    annotations:
+      # Workload Identity: encrypt/decrypt on the vault-unseal key only (idp-infra modules/vault-unseal)
+      iam.gke.io/gcp-service-account: vault-server@project-324502ff-9928-4b17-a89.iam.gserviceaccount.com
+
+  statefulSet:
+    securityContext:
+      pod:
+        runAsNonRoot: true
+        runAsUser: 100
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      container:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities: {drop: [ALL]} # no IPC_LOCK: disable_mlock = true below, as recommended for Raft
+
+  # The chart renders the HCL into /tmp at start; with a read-only root it needs a writable /tmp.
+  volumes:
+    - name: tmp
+      emptyDir: {medium: Memory, sizeLimit: 8Mi}
+  volumeMounts:
+    - name: tmp
+      mountPath: /tmp
+
+  # Raft is configured through the chart's "ha" block, which is the chart's only Raft path; with
+  # one replica it is a single-node (standalone) Vault. No PDB: with one replica it would block
+  # GKE node upgrades, and a Spot preemption ignores PDBs anyway.
+  standalone:
+    enabled: false
+  ha:
+    enabled: true
+    replicas: 1
+    disruptionBudget:
+      enabled: false
+    raft:
+      enabled: true
+      setNodeId: true
+      config: |
+        ui = true
+        disable_mlock = true
+
+        listener "tcp" {
+          tls_disable     = 1
+          address         = "[::]:8200"
+          cluster_address = "[::]:8201"
+        }
+
+        storage "raft" {
+          path = "/vault/data"
+        }
+
+        # Auto-unseal: the KMS key in the persistent stack (idp-infra modules/kms ring "idp",
+        # key from modules/vault-unseal). Credentials come from Workload Identity, no key file.
+        # On a Spot preemption the pod restarts on another node, re-attaches the PVC and unseals
+        # itself through KMS with no human step.
+        seal "gcpckms" {
+          project    = "project-324502ff-9928-4b17-a89"
+          region     = "us-central1"
+          key_ring   = "idp"
+          crypto_key = "vault-unseal"
+        }
+
+        service_registration "kubernetes" {}
