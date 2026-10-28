@@ -22,13 +22,26 @@ spec:
       component: server
   policyTypes: [Ingress]
   ingress:
-    # VSO (reads secrets) and the Tailscale proxies (vault-admin UI and CLI over the tailnet).
+    # VSO (reads secrets for the namespaces it serves).
     - from:
         - namespaceSelector:
-            matchExpressions:
-              - key: kubernetes.io/metadata.name
-                operator: In
-                values: [vault-secrets-operator, tailscale]
+            matchLabels:
+              kubernetes.io/metadata.name: vault-secrets-operator
+      ports:
+        - {protocol: TCP, port: 8200}
+    # Only the Tailscale proxy of the vault-admin Ingress, not every proxy in the tailscale
+    # namespace. The operator copies these labels onto its proxy pods (tailscale operator
+    # cmd/k8s-operator: childResourceLabels, "sync StatefulSet labels to Pod").
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: tailscale
+          podSelector:
+            matchLabels:
+              tailscale.com/managed: "true"
+              tailscale.com/parent-resource: vault-admin
+              tailscale.com/parent-resource-ns: vault
+              tailscale.com/parent-resource-type: ingress
       ports:
         - {protocol: TCP, port: 8200}
     # The vault-config PostSync Job in this namespace.
