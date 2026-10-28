@@ -113,10 +113,43 @@ selected versions; deleting the metadata already removes everything).
 
 ```hcl
 path "kv/metadata/*" { capabilities = ["list", "delete"] }
+path "kv/metadata/" { capabilities = ["deny"] }
+path "kv/metadata/vault*" { capabilities = ["deny"] }
+path "kv/metadata/idp-system/*" { capabilities = ["deny"] }
+path "kv/metadata/argocd/*" { capabilities = ["deny"] }
+path "kv/metadata/identity/*" { capabilities = ["deny"] }
+path "kv/metadata/cert-manager/*" { capabilities = ["deny"] }
+path "kv/metadata/tailscale/*" { capabilities = ["deny"] }
+path "kv/metadata/default/*" { capabilities = ["deny"] }
+path "kv/metadata/echo/*" { capabilities = ["deny"] }
+path "kv/metadata/istio-*" { capabilities = ["deny"] }
+path "kv/metadata/kube-*" { capabilities = ["deny"] }
+path "kv/metadata/gke-*" { capabilities = ["deny"] }
 path "auth/token/lookup-self" { capabilities = ["read"] }
 path "auth/token/renew-self" { capabilities = ["update"] }
 path "auth/token/revoke-self" { capabilities = ["update"] }
 ```
+
+The deny rules limit a stolen or misused operator token: it cannot enumerate tenants (no LIST
+of the root) and cannot wipe platform namespaces. The list is the reserved names and prefixes
+of idp-portal `api/internal/orders/orders.go` plus `vault*` (vault, vault-demo,
+vault-secrets-operator, reserved in the operator too); keep them in sync. How Vault 2.0.4
+matches them (`vault/acl.go`, `AllowOperation`):
+
+- A path without `*`/`+` is an **exact** rule and is checked first. `kv/metadata/` matches only
+  `LIST kv/metadata/` (for LIST Vault also tries the path without its trailing slash,
+  `kv/metadata`, which matches nothing). `LIST kv/metadata/team-a/` is looked up as
+  `kv/metadata/team-a/` and `kv/metadata/team-a`, so the root deny never covers a tenant.
+- A trailing `*` is a **prefix** rule; `*` anywhere else is a literal character, which is why
+  the prefixes are written `istio-*`, not `istio-*/*`. When several prefix rules match, the most
+  specific (longest) wins, so `kv/metadata/vault*` and `kv/metadata/idp-system/*` beat
+  `kv/metadata/*`. For LIST with a trailing slash Vault also prefers a deny that is at least as
+  specific as the winning allow.
+- Result: `LIST kv/metadata/team-a/` and `DELETE kv/metadata/team-a/<key>` match only
+  `kv/metadata/*` (allowed); `LIST kv/metadata/` and anything under `vault*`, `idp-system/`,
+  `istio-`... is denied. Not covered (and harmless): a root-level *key* literally named after a
+  platform namespace, e.g. `kv/metadata/argocd` without a slash; nothing writes keys at the root.
+- `vault*` also matches tenant names starting with `vault`; the operator reserves that prefix.
 
 The operator logs in with its own ServiceAccount token, audience `vault`, mounted by
 `workloads/idp-operator/idp-operator.yaml` at `/var/run/secrets/vault/token`
@@ -208,6 +241,13 @@ spec:
 ```
 
 A `path` under another namespace fails with 403 in the VaultStaticSecret status.
+
+**Who creates VaultStaticSecrets today:** the platform (a cluster admin, or a manifest synced by
+Argo CD), not the tenant. The VSO chart does not aggregate its CRDs into the built-in
+`view`/`edit`/`admin` ClusterRoles, so a tenant namespace admin cannot create them. Tenant
+self-service comes later, either through the portal Secrets page (the operator creates the
+VaultStaticSecret, `IDP_NOTES.md` 10.3) or through an RBAC addition (an aggregated ClusterRole
+for `vaultstaticsecrets`); neither exists yet, and tenants get no VSO RBAC in this change.
 
 ## Network
 

@@ -213,8 +213,25 @@ spec:
               vault policy write ns-reader /tmp/ns-reader.hcl >/dev/null
               # KV v2: DELETE kv/metadata/<key> removes the key and all its versions; LIST walks a
               # namespace's tree. No read of secret data, no kv/data, no kv/destroy.
+              # Denies: no LIST of the root (tenant names cannot be enumerated) and nothing under
+              # platform namespaces (the reserved names/prefixes of idp-portal orders.go plus vault*).
+              # Vault uses the most specific matching rule; these are more specific than
+              # kv/metadata/*. A `*` is only a glob at the end of a path, so prefixes end in `*`.
+              DENY='  capabilities = ["deny"]'
               printf '%s\n' \
                 'path "kv/metadata/*" {' '  capabilities = ["list", "delete"]' '}' \
+                'path "kv/metadata/" {' "$DENY" '}' \
+                'path "kv/metadata/vault*" {' "$DENY" '}' \
+                'path "kv/metadata/idp-system/*" {' "$DENY" '}' \
+                'path "kv/metadata/argocd/*" {' "$DENY" '}' \
+                'path "kv/metadata/identity/*" {' "$DENY" '}' \
+                'path "kv/metadata/cert-manager/*" {' "$DENY" '}' \
+                'path "kv/metadata/tailscale/*" {' "$DENY" '}' \
+                'path "kv/metadata/default/*" {' "$DENY" '}' \
+                'path "kv/metadata/echo/*" {' "$DENY" '}' \
+                'path "kv/metadata/istio-*" {' "$DENY" '}' \
+                'path "kv/metadata/kube-*" {' "$DENY" '}' \
+                'path "kv/metadata/gke-*" {' "$DENY" '}' \
                 'path "auth/token/lookup-self" {' '  capabilities = ["read"]' '}' \
                 'path "auth/token/renew-self" {' '  capabilities = ["update"]' '}' \
                 'path "auth/token/revoke-self" {' '  capabilities = ["update"]' '}' \
