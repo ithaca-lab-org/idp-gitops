@@ -29,6 +29,7 @@ Design: `IDP_NOTES.md` section 10. Vault is rebuilt empty on every `make up` (si
    `system:auth-delegator` binding) with role `vso-demo` bound to ServiceAccount
    `vault-demo/vault-demo` (audience `vault`), writes the per-namespace policies `ns-reader` and
    `ns-purge` and the roles `ns-reader` and `idp-operator-purge` (see "Per-namespace access"),
+   the write-only policy and role `portal-secrets` (see "Portal Secrets"),
    makes the `kubernetes/` auth mount visible on the
    login page (the completion mark), and **revokes its own token** (`vault token revoke -self`).
    A second container then deletes `vault/vault-bootstrap` (RBAC: get/delete on that one Secret).
@@ -245,15 +246,105 @@ A `path` under another namespace fails with 403 in the VaultStaticSecret status.
 **Who creates VaultStaticSecrets today:** the platform (a cluster admin, or a manifest synced by
 Argo CD), not the tenant. The VSO chart does not aggregate its CRDs into the built-in
 `view`/`edit`/`admin` ClusterRoles, so a tenant namespace admin cannot create them. Tenant
-self-service comes later, either through the portal Secrets page (the operator creates the
-VaultStaticSecret, `IDP_NOTES.md` 10.3) or through an RBAC addition (an aggregated ClusterRole
-for `vaultstaticsecrets`); neither exists yet, and tenants get no VSO RBAC in this change.
+self-service comes through the portal Secrets page (the operator creates the VaultStaticSecret
+from a ManagedSecret, see "Portal Secrets") or later through an RBAC addition (an aggregated
+ClusterRole for `vaultstaticsecrets`); tenants get no VSO RBAC.
+
+## Portal Secrets
+
+The portal Secrets page writes tenant secrets into Vault; VSO delivers them. The portal is
+**write-only**: it can create, overwrite and delete a secret, but it can never read a value back
+(no `read` on `kv/data`, no `kv/subkeys`). Values never land in MongoDB, CRDs, Git or logs
+(`IDP_NOTES.md` 10.3).
+
+**Flow:**
+
+1. A signed-in user submits a secret for namespace `<ns>`. portal-api (idp-portal) checks that
+   the user may manage `<ns>`; Vault does not know the user.
+2. portal-api logs in to Vault: `POST auth/kubernetes/login`, `role=portal-secrets`, `jwt=` the
+   file `/var/run/secrets/vault/token` (its own ServiceAccount token, audience `vault`,
+   `expirationSeconds: 600`, re-read for every login; `workloads/portal/portal-api.yaml`).
+3. `PUT kv/data/<ns>/<name>` (KV v2 `create` for a new key, `update` for a new version of an
+   existing one). The response holds only version metadata.
+4. portal-api creates a `ManagedSecret` (`idp.ithaca-idp.com`) in `<ns>`; the idp-operator turns it
+   into a VaultStaticSecret that VSO syncs with role `ns-reader` (the namespace's own
+   ServiceAccount `vault-reader`, see "Per-namespace access").
+5. Delete: `DELETE kv/metadata/<ns>/<name>` (the key and all its versions) and delete the
+   ManagedSecret.
+
+**Who can do what:**
+
+| Who | Can | Cannot |
+|---|---|---|
+| portal-api (role `portal-secrets`) | create/update `kv/data/<ns>/...`; read (versions, timestamps), list and delete `kv/metadata/<ns>/...`; get/create/delete single ManagedSecrets | read any value; LIST the root `kv/metadata/`; touch `vault*`, `idp-system`, `argocd`, `identity`, `cert-manager`, `tailscale`, `default`, `echo`, `istio-*`, `kube-*`, `gke-*`; soft delete, undelete, destroy, subkeys; list or watch ManagedSecrets |
+| a tenant workload (VSO, role `ns-reader`) | read `kv/data/<own ns>/...` | write; another namespace |
+| idp-operator (role `idp-operator-purge`) | list and delete `kv/metadata/<ns>/...` when a TeamNamespace goes away | read values |
+
+Which user may write to which namespace is decided by portal-api, not by Vault: the role can
+write to every non-platform namespace. A stolen portal-api token can therefore overwrite or
+delete tenant secrets (not read them) for at most 1 h (`token_max_ttl`). Version history,
+rollback and soft delete (`IDP_NOTES.md` 10.3) are not possible with this policy (no
+`kv/undelete`, no `read` on `kv/data`); add them deliberately if needed.
+
+**Policy `portal-secrets`** (written by the `vault-config` Job):
+
+```hcl
+path "kv/data/*" { capabilities = ["create", "update"] } # never "read": write-only
+path "kv/metadata/*" { capabilities = ["read", "list", "delete"] }
+path "kv/metadata/" { capabilities = ["deny"] }
+# for P in vault*, idp-system/*, argocd/*, identity/*, cert-manager/*, tailscale/*, default/*,
+# echo/*, istio-*, kube-*, gke-* (the ns-purge list):
+path "kv/data/P" { capabilities = ["deny"] }
+path "kv/metadata/P" { capabilities = ["deny"] }
+path "kv/delete/*" { capabilities = ["deny"] }
+path "kv/destroy/*" { capabilities = ["deny"] }
+path "kv/undelete/*" { capabilities = ["deny"] }
+path "kv/subkeys/*" { capabilities = ["deny"] }
+path "auth/token/lookup-self" { capabilities = ["read"] }
+path "auth/token/renew-self" { capabilities = ["update"] }
+path "auth/token/revoke-self" { capabilities = ["update"] }
+```
+
+**Role `portal-secrets`** (auth/kubernetes): `bound_service_account_names=portal-api`,
+`bound_service_account_namespaces=idp-system`, `audience=vault`,
+`token_policies=portal-secrets`, `token_no_default_policy=true`, `token_ttl=10m`,
+`token_max_ttl=1h`.
+
+Matching (same rules as ns-purge above, Vault 2.0.4 `vault/acl.go`): the longest prefix rule
+wins, so `PUT kv/data/vault-demo/hello` matches `kv/data/vault*` (deny) before `kv/data/*`;
+`PUT kv/data/team-a/db` matches only `kv/data/*` (allowed). Not covered, harmless: a root-level
+key without a slash such as `kv/data/argocd` (nothing reads root keys; portal-api always writes
+`<ns>/<name>`). portal-api must use plain logical calls, not the `vault kv` CLI-style preflight
+(`sys/internal/ui/mounts/...`), which this policy does not grant.
+
+Like every step of the Job, this only reaches a **freshly initialized Vault** (rebuilt on every
+`make up`); an already configured Vault keeps its old policies (see "Re-runs and failures").
+
+**How to verify** (after `make up`, with a short-lived root token from
+`vault operator generate-root`, revoked afterwards):
+
+```sh
+vault policy read portal-secrets
+vault read auth/kubernetes/role/portal-secrets
+# capabilities of the policy for a path (sys/capabilities with a portal-secrets token, or):
+T="$(vault token create -policy=portal-secrets -no-default-policy -ttl=5m -field=token)"
+vault token capabilities "$T" kv/data/team-a/db          # create, update
+vault token capabilities "$T" kv/data/vault-demo/hello   # deny
+vault token capabilities "$T" kv/metadata/               # deny
+VAULT_TOKEN="$T" vault read kv/data/team-a/db            # 403 (write-only)
+vault token revoke "$T"
+```
+
+From the cluster: `kubectl -n idp-system get pod -l app.kubernetes.io/name=portal-api -o yaml`
+shows the `vault-token` volume, and portal-api's logs show a successful login once the image
+with the Secrets page is deployed.
 
 ## Network
 
 `networkpolicy.yaml`: default-deny ingress; port 8200 only from VSO (namespace
-`vault-secrets-operator`), from the idp-operator pods (namespace `idp-system`, label
-`app.kubernetes.io/name=idp-operator`; idp-system has no egress policy and is not in the mesh, so
+`vault-secrets-operator`), from the idp-operator and portal-api pods (namespace `idp-system`,
+labels `app.kubernetes.io/name=idp-operator` and `app.kubernetes.io/name=portal-api`; idp-system
+has no egress policy and is not in the mesh, so
 nothing else is needed on that side), from the Tailscale proxy pods of the `vault-admin` Ingress (namespace
 `tailscale`, labels `tailscale.com/parent-resource=vault-admin`, `parent-resource-ns=vault`,
 `parent-resource-type=ingress`, set by the operator on proxy pods) and from the `vault-config`

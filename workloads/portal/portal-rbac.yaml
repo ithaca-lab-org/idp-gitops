@@ -1,5 +1,7 @@
-# The portal creates and reads single TeamNamespace resources, nothing else: no list or watch (they
-# would expose every owner's email and order id), no update, no delete, no other resource. The operator does the rest, and the admission policy confines it.
+# The portal creates and reads single TeamNamespace resources and gets, creates and deletes single
+# ManagedSecret resources, nothing else: no list or watch (they would expose every owner's email and
+# order id, or every tenant's secret names), no update or patch, no other resource. The operator
+# does the rest, and the admission policy confines it.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -8,6 +10,12 @@ rules:
   - apiGroups: ["idp.ithaca-idp.com"]
     resources: ["teamnamespaces"]
     verbs: ["get", "create"]
+  # Portal Secrets page: one ManagedSecret per secret the portal writes to Vault; the operator
+  # turns it into a VaultStaticSecret. get/create/delete by name only: no list or watch (they would
+  # expose every tenant's secret names), no update or patch.
+  - apiGroups: ["idp.ithaca-idp.com"]
+    resources: ["managedsecrets"]
+    verbs: ["get", "create", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

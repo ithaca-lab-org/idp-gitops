@@ -55,6 +55,17 @@ spec:
               app.kubernetes.io/name: idp-operator
       ports:
         - {protocol: TCP, port: 8200}
+    # The portal-api pods (namespace idp-system): Kubernetes auth role portal-secrets, which can
+    # write and delete tenant KV secrets but never read a value (README "Portal Secrets").
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: idp-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: portal-api
+      ports:
+        - {protocol: TCP, port: 8200}
     # The vault-config PostSync Job in this namespace.
     - from:
         - podSelector:

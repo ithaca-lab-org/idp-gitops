@@ -9,7 +9,7 @@ metadata:
   annotations:
     # Workload Identity: publish-only on the order-events topic (idp-infra modules/order-events)
     iam.gke.io/gcp-service-account: portal-api@project-324502ff-9928-4b17-a89.iam.gserviceaccount.com
-automountServiceAccountToken: true # the order API calls the Kubernetes API (see portal-rbac.yaml)
+automountServiceAccountToken: true # the order and secrets APIs call the Kubernetes API (see portal-rbac.yaml)
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -57,6 +57,12 @@ spec:
             - {name: MONGO_DB, value: idp}
             - {name: PUBSUB_PROJECT, value: project-324502ff-9928-4b17-a89}
             - {name: PUBSUB_TOPIC, value: order-events}
+            # Portal Secrets page (workloads/vault/README.md "Portal Secrets"): write-only Vault
+            # role portal-secrets, logged in with the projected token below. Images built before
+            # the Secrets page ignore these variables.
+            - {name: SECRETS_ENABLED, value: "true"}
+            - {name: VAULT_ADDR, value: "http://vault.vault.svc.cluster.local:8200"}
+            - {name: VAULT_SECRETS_ROLE, value: portal-secrets}
           readinessProbe:
             httpGet: {path: /healthz, port: http}
             periodSeconds: 10
@@ -73,10 +79,18 @@ spec:
             capabilities: {drop: [ALL]}
           volumeMounts:
             - {name: staging-ca, mountPath: /etc/idp/ca, readOnly: true}
+            - {name: vault-token, mountPath: /var/run/secrets/vault, readOnly: true}
       volumes:
         - name: staging-ca
           configMap:
             name: staging-ca
+        # portal-api's own ServiceAccount token with audience "vault", for the Vault Kubernetes
+        # auth role portal-secrets. The kubelet rotates it (re-read the file for each login);
+        # Vault rejects the default token, whose audience is the API server.
+        - name: vault-token
+          projected:
+            sources:
+              - serviceAccountToken: {path: token, audience: vault, expirationSeconds: 600}
 ---
 apiVersion: v1
 kind: Service
