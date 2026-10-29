@@ -61,7 +61,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: manager
-          image: us-central1-docker.pkg.dev/project-324502ff-9928-4b17-a89/idp/idp-operator:e9afff1deb9c038553cdc4504b8d06d48d33c4db@sha256:96cbbc20ef7f743cadc0ae74d966b7134c772bc3886e5feafec0014a6ecc2fb7
+          image: us-central1-docker.pkg.dev/project-324502ff-9928-4b17-a89/idp/idp-operator:a88e09fd8754104de3d9366d2fa162f4ea894d62@sha256:be1ed56cdd0aa1fd769da8735b7d50c780a8a026e53bcbe961777e2d7065ba48
           args:
             - --leader-elect=true
             - --health-probe-bind-address=:8081
