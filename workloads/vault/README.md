@@ -276,7 +276,7 @@ The portal Secrets page writes tenant secrets into Vault; VSO delivers them. The
 
 | Who | Can | Cannot |
 |---|---|---|
-| portal-api (role `portal-secrets`) | create/update `kv/data/<ns>/...`; read (versions, timestamps), list and delete `kv/metadata/<ns>/...`; get/create/delete single ManagedSecrets | read any value; LIST the root `kv/metadata/`; touch `vault*`, `idp-system`, `argocd`, `identity`, `cert-manager`, `tailscale`, `default`, `echo`, `istio-*`, `kube-*`, `gke-*`; soft delete, undelete, destroy, subkeys; list or watch ManagedSecrets |
+| portal-api (role `portal-secrets`) | create/update `kv/data/<ns>/...`; delete `kv/metadata/<ns>/...`; get/create/delete single ManagedSecrets | read any value; read or list `kv/metadata` (no enumeration of secret names); touch `vault*`, `idp-system`, `argocd`, `identity`, `cert-manager`, `tailscale`, `default`, `echo`, `istio-*`, `kube-*`, `gke-*`; soft delete, undelete, destroy, subkeys; list or watch ManagedSecrets |
 | a tenant workload (VSO, role `ns-reader`) | read `kv/data/<own ns>/...` | write; another namespace |
 | idp-operator (role `idp-operator-purge`) | list and delete `kv/metadata/<ns>/...` when a TeamNamespace goes away | read values |
 
@@ -290,8 +290,8 @@ rollback and soft delete (`IDP_NOTES.md` 10.3) are not possible with this policy
 
 ```hcl
 path "kv/data/*" { capabilities = ["create", "update"] } # never "read": write-only
-path "kv/metadata/*" { capabilities = ["read", "list", "delete"] }
-path "kv/metadata/" { capabilities = ["deny"] }
+path "kv/metadata/*" { capabilities = ["delete"] } # DELETE kv/metadata/<ns>/<name> only
+path "kv/metadata/" { capabilities = ["deny"] } # moot (nothing grants list); guard if list is added
 # for P in vault*, idp-system/*, argocd/*, identity/*, cert-manager/*, tailscale/*, default/*,
 # echo/*, istio-*, kube-*, gke-* (the ns-purge list):
 path "kv/data/P" { capabilities = ["deny"] }
@@ -320,6 +320,19 @@ key without a slash such as `kv/data/argocd` (nothing reads root keys; portal-ap
 Like every step of the Job, this only reaches a **freshly initialized Vault** (rebuilt on every
 `make up`); an already configured Vault keeps its old policies (see "Re-runs and failures").
 
+**Rollout order.** This change is safe to merge before the new images exist:
+`SECRETS_ENABLED` is `"false"` in `workloads/portal/portal-api.yaml`, so the Secrets routes return
+404 and portal-api builds no Vault client; old images ignore the variables entirely.
+
+1. idp-portal #21 (portal API/web) and #22 (operator, ManagedSecret) merged and images built.
+2. One bump PR (by the maintainer), in this order: first the idp-operator pins (CRD, RBAC,
+   config/policy including the `idp-portal-scope` ValidatingAdmissionPolicy) and the operator
+   image, then the portal-api image, and flip the one-line switch `SECRETS_ENABLED` to `"true"`.
+   If portal-api runs the new image with the switch on before the operator and the CRD exist,
+   its writes fail.
+3. Rebuild (`make down` / `make up`): the `portal-secrets` policy and role exist only on a Vault
+   configured from scratch by the `vault-config` Job.
+
 **How to verify** (after `make up`, with a short-lived root token from
 `vault operator generate-root`, revoked afterwards):
 
@@ -331,7 +344,9 @@ T="$(vault token create -policy=portal-secrets -no-default-policy -ttl=5m -field
 vault token capabilities "$T" kv/data/team-a/db          # create, update
 vault token capabilities "$T" kv/data/vault-demo/hello   # deny
 vault token capabilities "$T" kv/metadata/               # deny
+vault token capabilities "$T" kv/metadata/team-a/db      # delete
 VAULT_TOKEN="$T" vault read kv/data/team-a/db            # 403 (write-only)
+VAULT_TOKEN="$T" vault list kv/metadata/team-a           # 403 (no enumeration)
 vault token revoke "$T"
 ```
 

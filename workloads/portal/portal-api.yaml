@@ -59,8 +59,9 @@ spec:
             - {name: PUBSUB_TOPIC, value: order-events}
             # Portal Secrets page (workloads/vault/README.md "Portal Secrets"): write-only Vault
             # role portal-secrets, logged in with the projected token below. Images built before
-            # the Secrets page ignore these variables.
-            - {name: SECRETS_ENABLED, value: "true"}
+            # the Secrets page ignore these variables. "false": routes 404, no Vault client.
+            # SWITCH: set to "true" in the image bump PR, after the operator/CRD pins (README order).
+            - {name: SECRETS_ENABLED, value: "false"}
             - {name: VAULT_ADDR, value: "http://vault.vault.svc.cluster.local:8200"}
             - {name: VAULT_SECRETS_ROLE, value: portal-secrets}
           readinessProbe:
