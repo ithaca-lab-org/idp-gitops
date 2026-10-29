@@ -61,11 +61,16 @@ spec:
           type: RuntimeDefault
       containers:
         - name: manager
-          image: us-central1-docker.pkg.dev/project-324502ff-9928-4b17-a89/idp/idp-operator:fc2c9f3c6c1e0279ed142c97f9d660dd7690773f@sha256:45677873584899b69e6703428133e1dbb6dfa18b0202caab92e68270a65b78b1
+          image: us-central1-docker.pkg.dev/project-324502ff-9928-4b17-a89/idp/idp-operator:e9afff1deb9c038553cdc4504b8d06d48d33c4db@sha256:96cbbc20ef7f743cadc0ae74d966b7134c772bc3886e5feafec0014a6ecc2fb7
           args:
             - --leader-elect=true
             - --health-probe-bind-address=:8081
             - --metrics-bind-address=:8443
+          env:
+            # Per-namespace Vault access and KV purge (idp-portal #19). Everything else uses the
+            # defaults: VAULT_ADDR http://vault.vault.svc.cluster.local:8200, purge role
+            # idp-operator-purge, token file /var/run/secrets/vault/token.
+            - {name: VAULT_ENABLED, value: "true"}
           ports:
             - {name: metrics, containerPort: 8443}
             - {name: probes, containerPort: 8081}
@@ -78,7 +83,7 @@ spec:
             periodSeconds: 20
           resources:
             requests: {cpu: 50m, memory: 128Mi}
-            limits: {memory: 256Mi}
+            limits: {memory: 384Mi} # caches ServiceAccounts and VaultAuths cluster-wide since the Vault access
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
