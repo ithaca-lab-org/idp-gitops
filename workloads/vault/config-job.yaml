@@ -7,7 +7,8 @@
 #      mounted as an OPTIONAL volume, so the pod starts without it and the kubelet fills it in when it appears;
 #   3. with that token: audit to stdout, kv-v2 at kv/, the demo secret, policy vso-demo,
 #      Kubernetes auth with role vso-demo, the per-namespace policies ns-reader (templated on the
-#      caller's ServiceAccount namespace) and ns-purge with roles ns-reader and idp-operator-purge;
+#      caller's ServiceAccount namespace) and ns-purge with roles ns-reader and idp-operator-purge,
+#      the write-only policy and role portal-secrets (portal Secrets page);
 #      marks completion by making the kubernetes/ auth mount
 #      visible on the (unauthenticated) UI login page; then revokes its own token;
 #   4. a second container deletes Secret vault/vault-bootstrap (RBAC: that one Secret only).
@@ -256,6 +257,48 @@ spec:
                 token_no_default_policy=true \
                 token_ttl=5m \
                 token_max_ttl=15m >/dev/null
+
+              # Portal Secrets page (README "Portal Secrets"): portal-api writes and deletes tenant
+              # secrets but is WRITE-ONLY: the portal must never be able to read a secret value, so
+              # there is no `read` on kv/data and no kv/subkeys (it would reveal the key names).
+              # A KV v2 write (PUT kv/data/<ns>/<name>) is `create` for a new key and `update` for an
+              # existing one; its response carries only version metadata. DELETE kv/metadata/<ns>/<name>
+              # (only the `delete` capability) removes a key with all its versions. No read or list on
+              # kv/metadata either: a stolen token cannot enumerate tenants' secret names.
+              # Denies: the same root LIST and platform prefixes as ns-purge, on kv/data and
+              # kv/metadata; Vault uses the longest matching prefix, so `kv/data/vault*` beats
+              # `kv/data/*` for kv/data/vault-demo/hello. kv/delete, destroy, undelete and subkeys are
+              # not granted anyway; the explicit denies document that. The root LIST deny is moot
+              # while nothing grants list; it stays as a guard if list is ever added.
+              echo "policy and role: portal-secrets"
+              {
+                printf '%s\n' \
+                  'path "kv/data/*" {' '  capabilities = ["create", "update"]' '}' \
+                  'path "kv/metadata/*" {' '  capabilities = ["delete"]' '}' \
+                  'path "kv/metadata/" {' "$DENY" '}'
+                for p in 'vault*' 'idp-system/*' 'argocd/*' 'identity/*' 'cert-manager/*' \
+                    'tailscale/*' 'default/*' 'echo/*' 'istio-*' 'kube-*' 'gke-*'; do
+                  printf '%s\n' "path \"kv/data/${p}\" {" "$DENY" '}' \
+                    "path \"kv/metadata/${p}\" {" "$DENY" '}'
+                done
+                printf '%s\n' \
+                  'path "kv/delete/*" {' "$DENY" '}' \
+                  'path "kv/destroy/*" {' "$DENY" '}' \
+                  'path "kv/undelete/*" {' "$DENY" '}' \
+                  'path "kv/subkeys/*" {' "$DENY" '}' \
+                  'path "auth/token/lookup-self" {' '  capabilities = ["read"]' '}' \
+                  'path "auth/token/renew-self" {' '  capabilities = ["update"]' '}' \
+                  'path "auth/token/revoke-self" {' '  capabilities = ["update"]' '}'
+              } > /tmp/portal-secrets.hcl
+              vault policy write portal-secrets /tmp/portal-secrets.hcl >/dev/null
+              vault write auth/kubernetes/role/portal-secrets \
+                bound_service_account_names=portal-api \
+                bound_service_account_namespaces=idp-system \
+                audience=vault \
+                token_policies=portal-secrets \
+                token_no_default_policy=true \
+                token_ttl=10m \
+                token_max_ttl=1h >/dev/null
 
               # Completion mark (see configured() above). Must stay the last config step.
               vault write sys/auth/kubernetes/tune listing_visibility=unauth >/dev/null
