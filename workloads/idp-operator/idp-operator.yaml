@@ -83,3 +83,13 @@ spec:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: vault-token, mountPath: /var/run/secrets/vault, readOnly: true}
+      volumes:
+        # The operator's own ServiceAccount token with audience "vault", for the Vault Kubernetes
+        # auth role idp-operator-purge (workloads/vault/README.md "Per-namespace access"). The
+        # kubelet rotates it; Vault rejects the default token, whose audience is the API server.
+        - name: vault-token
+          projected:
+            sources:
+              - serviceAccountToken: {path: token, audience: vault, expirationSeconds: 600}

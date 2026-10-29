@@ -44,6 +44,17 @@ spec:
               tailscale.com/parent-resource-type: ingress
       ports:
         - {protocol: TCP, port: 8200}
+    # The idp-operator pods (namespace idp-system): Kubernetes auth role idp-operator-purge, which
+    # can only list and permanently delete KV metadata when a TeamNamespace is deleted.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: idp-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: idp-operator
+      ports:
+        - {protocol: TCP, port: 8200}
     # The vault-config PostSync Job in this namespace.
     - from:
         - podSelector:
