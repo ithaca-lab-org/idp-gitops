@@ -320,7 +320,10 @@ spec:
                 'path "auth/token/revoke-self" {' '  capabilities = ["update"]' '}' \
                 > /tmp/vault-proof.hcl
               vault policy write vault-proof /tmp/vault-proof.hcl >/dev/null
-              # Bound to vault/vault-proof only; 1 h, not renewable past 1 h (and no renew-self).
+              # Bound to vault/vault-proof only. TTL = max TTL = 1 h and the policy has no
+              # renew-self, so it cannot outlive 1 h. token_bound_cidrs: the token works only from
+              # 127.0.0.1, i.e. inside vault-0 (the chart sets VAULT_ADDR=http://127.0.0.1:8200 there
+              # and the script runs every call through `kubectl exec vault-0`).
               vault write auth/kubernetes/role/vault-proof \
                 bound_service_account_names=vault-proof \
                 bound_service_account_namespaces=vault \
@@ -328,7 +331,8 @@ spec:
                 token_policies=vault-proof \
                 token_no_default_policy=true \
                 token_ttl=1h \
-                token_max_ttl=1h >/dev/null
+                token_max_ttl=1h \
+                token_bound_cidrs=127.0.0.1/32 >/dev/null
 
               # Completion mark (see configured() above). Must stay the last config step.
               vault write sys/auth/kubernetes/tune listing_visibility=unauth >/dev/null

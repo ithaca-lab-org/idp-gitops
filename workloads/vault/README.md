@@ -364,7 +364,9 @@ with the Secrets page is deployed.
 
 idp-infra `scripts/vault-proof.sh` logs in with Kubernetes auth role `vault-proof`, bound to the
 ServiceAccount `vault/vault-proof` only (`proof-serviceaccount.yaml`: no workload, no RBAC, no
-automount), audience `vault`, token TTL and max TTL 1 h, no default policy. Policy `vault-proof`:
+automount), audience `vault`, token TTL = max TTL = 1 h (no renew-self path, so it cannot outlive
+1 h), no default policy, `token_bound_cidrs=127.0.0.1/32` (the token works only from inside
+`vault-0`, where the chart sets `VAULT_ADDR=http://127.0.0.1:8200`). Policy `vault-proof`:
 
 ```hcl
 path "kv/data/vproof-a/*"     { capabilities = ["create", "update", "read"] }
@@ -377,7 +379,7 @@ path "auth/token/revoke-self" { capabilities = ["update"] }
 ```
 
 Who can use it: anyone who can `kubectl -n vault create token vault-proof` (create on
-`serviceaccounts/token` in namespace `vault`, i.e. cluster admins and Argo CD). Tenants cannot:
+`serviceaccounts/token` in namespace `vault`): cluster admins, Argo CD (anyone who can merge to idp-gitops) and GCP principals with roles/container.developer or roles/container.admin. Tenants cannot:
 the role checks namespace `vault`, and `vault`/`vault-*` are reserved TeamNamespace names (CRD
 rule, portal and operator). Caveat: a tenant namespace that is really named `vproof-a` or
 `vproof-b` would be readable by this role; the proof script refuses to run when either exists.
