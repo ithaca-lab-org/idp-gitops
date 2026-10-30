@@ -8,7 +8,8 @@
 #   3. with that token: audit to stdout, kv-v2 at kv/, the demo secret, policy vso-demo,
 #      Kubernetes auth with role vso-demo, the per-namespace policies ns-reader (templated on the
 #      caller's ServiceAccount namespace) and ns-purge with roles ns-reader and idp-operator-purge,
-#      the write-only policy and role portal-secrets (portal Secrets page);
+#      the write-only policy and role portal-secrets (portal Secrets page), the policy and role
+#      vault-proof (idp-infra scripts/vault-proof.sh; ServiceAccount vault/vault-proof);
 #      marks completion by making the kubernetes/ auth mount
 #      visible on the (unauthenticated) UI login page; then revokes its own token;
 #   4. a second container deletes Secret vault/vault-bootstrap (RBAC: that one Secret only).
@@ -92,8 +93,9 @@ spec:
               unset VAULT_TOKEN || true
               HELP="Re-run idp-infra ./scripts/bootstrap-secrets.sh (it issues a new 30 min bootstrap token
                 into vault/vault-bootstrap), then sync the vault app in Argo CD. If Vault is initialized but
-                the script cannot issue a token, use 'vault operator generate-root' with the recovery keys
-                (idp-infra docs/vault.md) and see workloads/vault/README.md in idp-gitops."
+                the script cannot issue a token, rebuild Vault (idp-infra docs/vault.md, 'Rebuild Vault'):
+                Vault 2.0 needs a valid token for 'vault operator generate-root', so the recovery keys
+                alone do not give an admin token (workloads/vault/README.md in idp-gitops)."
 
               # Completion mark, readable without a token: the last config step makes the
               # kubernetes/ auth mount visible to unauthenticated clients (the UI login page).
@@ -298,6 +300,34 @@ spec:
                 token_policies=portal-secrets \
                 token_no_default_policy=true \
                 token_ttl=10m \
+                token_max_ttl=1h >/dev/null
+
+              # Proof role (README "Proof role vault-proof"): idp-infra scripts/vault-proof.sh logs in
+              # as ServiceAccount vault/vault-proof (no workload uses it, no RBAC). It may only touch
+              # the two throwaway proof namespaces' KV paths and read role portal-secrets (P7
+              # existence check). No sudo, no sys/*. In ACL paths `*` is a glob only at the END, so
+              # the two namespaces are listed one by one. KV v2: PUT kv/data/<ns>/<key> is create or
+              # update, GET is read; LIST kv/metadata/<ns>/ is list; DELETE kv/metadata/<ns>/<key>
+              # removes a key with all versions. Self paths replace the default policy.
+              echo "policy and role: vault-proof"
+              printf '%s\n' \
+                'path "kv/data/vproof-a/*" {' '  capabilities = ["create", "update", "read"]' '}' \
+                'path "kv/data/vproof-b/*" {' '  capabilities = ["create", "update", "read"]' '}' \
+                'path "kv/metadata/vproof-a/*" {' '  capabilities = ["list", "delete"]' '}' \
+                'path "kv/metadata/vproof-b/*" {' '  capabilities = ["list", "delete"]' '}' \
+                'path "auth/kubernetes/role/portal-secrets" {' '  capabilities = ["read"]' '}' \
+                'path "auth/token/lookup-self" {' '  capabilities = ["read"]' '}' \
+                'path "auth/token/revoke-self" {' '  capabilities = ["update"]' '}' \
+                > /tmp/vault-proof.hcl
+              vault policy write vault-proof /tmp/vault-proof.hcl >/dev/null
+              # Bound to vault/vault-proof only; 1 h, not renewable past 1 h (and no renew-self).
+              vault write auth/kubernetes/role/vault-proof \
+                bound_service_account_names=vault-proof \
+                bound_service_account_namespaces=vault \
+                audience=vault \
+                token_policies=vault-proof \
+                token_no_default_policy=true \
+                token_ttl=1h \
                 token_max_ttl=1h >/dev/null
 
               # Completion mark (see configured() above). Must stay the last config step.

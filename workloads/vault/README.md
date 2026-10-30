@@ -29,16 +29,20 @@ Design: `IDP_NOTES.md` section 10. Vault is rebuilt empty on every `make up` (si
    `system:auth-delegator` binding) with role `vso-demo` bound to ServiceAccount
    `vault-demo/vault-demo` (audience `vault`), writes the per-namespace policies `ns-reader` and
    `ns-purge` and the roles `ns-reader` and `idp-operator-purge` (see "Per-namespace access"),
-   the write-only policy and role `portal-secrets` (see "Portal Secrets"),
-   makes the `kubernetes/` auth mount visible on the
+   the write-only policy and role `portal-secrets` (see "Portal Secrets"), the policy and role
+   `vault-proof` (see "Proof role vault-proof"), makes the `kubernetes/` auth mount visible on the
    login page (the completion mark), and **revokes its own token** (`vault token revoke -self`).
    A second container then deletes `vault/vault-bootstrap` (RBAC: get/delete on that one Secret).
    Every call stays inside policy `vault-bootstrap`; the Job avoids `vault audit list` (needs
    `sudo` on `sys/audit`) and `vault token lookup` (needs the default policy).
 4. VSO logs in as `vault-demo/vault-demo` and keeps `vault-demo/hello` in sync (every 60 s).
 
-No privileged token is left afterwards. For admin work, generate a short-lived root token with
-the recovery keys (`vault operator generate-root`, idp-infra `docs/vault.md`), use it, and revoke it.
+No privileged token is left afterwards, and there is currently **no break-glass admin path**:
+Vault 2.0 (CVE-2026-5807 fix) requires an authenticated token for `sys/generate-root` and
+`sys/rekey`, so the recovery keys in Secret Manager alone no longer produce a root token once the
+bootstrap root token is revoked. Admin changes go through this Job on a rebuilt Vault
+(`make down` / `make up`). The only standing admin-ish access is the narrow `vault-proof` role
+below (two throwaway KV prefixes).
 
 ## Re-runs and failures
 
@@ -47,15 +51,15 @@ the recovery keys (`vault operator generate-root`, idp-infra `docs/vault.md`), u
 - Every step is a create-or-overwrite (`enable` tolerates "already in use"), so a retry after a
   partial run is safe. Steps added to the Job later (like the per-namespace policies and roles)
   reach only a Vault configured from scratch: an already configured Vault is not touched. That is
-  fine because Vault is rebuilt empty on every `make up`; on a long-lived cluster apply them with a
-  short-lived root token (`vault operator generate-root`) or rebuild.
+  fine because Vault is rebuilt empty on every `make up`; on a long-lived cluster rebuild Vault
+  (there is no admin token to apply them by hand, see above).
 - It never exits 0 while Vault is unconfigured, so the Secret is never deleted before
   configuration finished.
 - **Token expired or Job started late:** the bootstrap token lives 30 min. If it is expired or
   revoked and Vault is not configured, the Job fails at once with instructions; it does not wait.
   Fix: re-run `./scripts/bootstrap-secrets.sh` in idp-infra (it issues a fresh bootstrap token),
   then sync the `vault` app in Argo CD (PostSync hooks only run on a sync). If no token can be
-  issued, use `vault operator generate-root` with the recovery keys.
+  issued, rebuild Vault (`generate-root` needs a valid token in Vault 2.0).
 - **No Secret within 20 min** of Vault being unsealed, or Vault still sealed after 20 min: the
   Job fails with the same instructions (`activeDeadlineSeconds` 50 min is only a backstop).
 
@@ -333,8 +337,10 @@ Like every step of the Job, this only reaches a **freshly initialized Vault** (r
 3. Rebuild (`make down` / `make up`): the `portal-secrets` policy and role exist only on a Vault
    configured from scratch by the `vault-config` Job.
 
-**How to verify** (after `make up`, with a short-lived root token from
-`vault operator generate-root`, revoked afterwards):
+**How to verify:** idp-infra `scripts/vault-proof.sh` P7 checks this on a running cluster. The
+commands below need a token that may create tokens and read policies, which no longer exists after
+the bootstrap (no `generate-root` without a token in Vault 2.0); they apply only to a scratch Vault
+where you still hold one:
 
 ```sh
 vault policy read portal-secrets
@@ -353,6 +359,29 @@ vault token revoke "$T"
 From the cluster: `kubectl -n idp-system get pod -l app.kubernetes.io/name=portal-api -o yaml`
 shows the `vault-token` volume, and portal-api's logs show a successful login once the image
 with the Secrets page is deployed.
+
+## Proof role vault-proof
+
+idp-infra `scripts/vault-proof.sh` logs in with Kubernetes auth role `vault-proof`, bound to the
+ServiceAccount `vault/vault-proof` only (`proof-serviceaccount.yaml`: no workload, no RBAC, no
+automount), audience `vault`, token TTL and max TTL 1 h, no default policy. Policy `vault-proof`:
+
+```hcl
+path "kv/data/vproof-a/*"     { capabilities = ["create", "update", "read"] }
+path "kv/data/vproof-b/*"     { capabilities = ["create", "update", "read"] }
+path "kv/metadata/vproof-a/*" { capabilities = ["list", "delete"] }
+path "kv/metadata/vproof-b/*" { capabilities = ["list", "delete"] }
+path "auth/kubernetes/role/portal-secrets" { capabilities = ["read"] }
+path "auth/token/lookup-self" { capabilities = ["read"] }
+path "auth/token/revoke-self" { capabilities = ["update"] }
+```
+
+Who can use it: anyone who can `kubectl -n vault create token vault-proof` (create on
+`serviceaccounts/token` in namespace `vault`, i.e. cluster admins and Argo CD). Tenants cannot:
+the role checks namespace `vault`, and `vault`/`vault-*` are reserved TeamNamespace names (CRD
+rule, portal and operator). Caveat: a tenant namespace that is really named `vproof-a` or
+`vproof-b` would be readable by this role; the proof script refuses to run when either exists.
+Like every Job step it exists only on a Vault configured from scratch.
 
 ## Network
 
