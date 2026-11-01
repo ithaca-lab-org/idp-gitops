@@ -103,7 +103,9 @@ server:
   # process when it changed (the kubelet swaps the Secret's files atomically, cert and key together).
   # It needs the shared process namespace and the same UID as Vault (no extra capability); it runs
   # the server image's busybox, nothing else. If it ever fails, Vault keeps serving the old
-  # certificate until expiry (7 days); a pod restart also picks up the new one.
+  # certificate until expiry (30 days, renewed after 10; verify.sh step 8 compares the served
+  # certificate with the Secret); a pod restart also picks up the new one. Only the server process
+  # (cmdline "vault server ...") is signalled, never a `kubectl exec vault-0 -- vault ...` CLI.
   shareProcessNamespace: true
   # With a second container, `kubectl exec/logs vault-0` would print "Defaulted container ..." on
   # stderr; the idp-infra scripts read the first stderr line of `vault` CLI errors. This keeps
@@ -122,11 +124,17 @@ server:
           while sleep 60; do
             now="$(cksum "$f" 2>/dev/null || true)"
             if [ -z "$now" ] || [ "$now" = "$last" ]; then continue; fi
-            if pid="$(pidof vault)" && kill -HUP $pid; then
-              echo "tls-reload: certificate changed, sent SIGHUP to vault (pid $pid)"
+            srv=""
+            for p in $(pidof vault); do
+              case " $(tr '\0' ' ' <"/proc/$p/cmdline" 2>/dev/null) " in
+                *" server "*) srv="$srv $p" ;;
+              esac
+            done
+            if [ -n "$srv" ] && kill -HUP $srv; then
+              echo "tls-reload: certificate changed, sent SIGHUP to vault server (pid$srv)"
               last="$now"
             else
-              echo "tls-reload: certificate changed but vault is not running; retrying" >&2
+              echo "tls-reload: certificate changed but no vault server process found; retrying" >&2
             fi
           done
       resources:

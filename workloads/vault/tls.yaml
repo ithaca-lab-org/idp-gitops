@@ -8,7 +8,11 @@
 # A ClusterIssuer can be referenced from any namespace, and tenants are namespace `admin` (which
 # cert-manager aggregates Certificate create into), so the ValidatingAdmissionPolicy below limits
 # vault-ca to the three namespaces that need it. Without it a tenant could mint a certificate for
-# vault.vault.svc that every Vault client trusts.
+# vault.vault.svc that every Vault client trusts. Outside `vault` the policies also force the
+# bundle shape: no CA, explicit usages without "server auth"/"any" (an empty list would give a cert
+# with no EKU, which Go clients accept as a server certificate), and for Certificates no DNS, IP or
+# URI SANs. A CertificateRequest's SANs sit in its opaque CSR, which CEL cannot read; without the
+# server-auth usage such a certificate is still useless as a server certificate.
 # Sync waves inside the vault app: Argo CD applies a wave only after the previous one is Healthy
 # (cert-manager Certificates and Issuers have built-in health checks), so the StatefulSet (wave 0)
 # is created only once vault-server-tls is Ready. If it never turns Ready, vault-0 never appears:
@@ -40,6 +44,16 @@ spec:
       messageExpression: >-
         'ClusterIssuer vault-ca (the Vault listener CA) may only be used in namespaces vault,
         vault-secrets-operator and idp-system, not ' + request.namespace
+    # isCA and usages exist in both CRDs (cert-manager v1.21.2), so this type-checks for both.
+    - expression: >-
+        request.namespace == 'vault' ||
+        (!object.spec.?isCA.orValue(false) &&
+        object.spec.?usages.orValue([]).size() > 0 &&
+        !object.spec.?usages.orValue([]).exists(u, u == 'server auth' || u == 'any'))
+      reason: Forbidden
+      message: >-
+        outside namespace vault, ClusterIssuer vault-ca only issues CA bundles: isCA false and
+        explicit usages without "server auth" or "any"
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicyBinding
@@ -49,6 +63,46 @@ metadata:
     argocd.argoproj.io/sync-wave: "-4"
 spec:
   policyName: vault-ca-scope
+  validationActions: ["Deny"]
+---
+# Certificates only (dnsNames, ipAddresses and uris do not exist on CertificateRequest): outside
+# namespace vault, a vault-ca Certificate carries no SANs.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: vault-ca-bundle-sans
+  annotations:
+    argocd.argoproj.io/sync-wave: "-4"
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["cert-manager.io"]
+        apiVersions: ["*"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["certificates"]
+  matchConditions:
+    - name: uses-vault-ca-outside-vault
+      expression: >-
+        request.namespace != 'vault' &&
+        object.spec.issuerRef.name == 'vault-ca' &&
+        object.spec.issuerRef.?kind.orValue('Issuer') == 'ClusterIssuer'
+  validations:
+    - expression: >-
+        object.spec.?dnsNames.orValue([]).size() == 0 &&
+        object.spec.?ipAddresses.orValue([]).size() == 0 &&
+        object.spec.?uris.orValue([]).size() == 0
+      reason: Forbidden
+      message: "outside namespace vault, a vault-ca Certificate may not have dnsNames, ipAddresses or uris"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: vault-ca-bundle-sans
+  annotations:
+    argocd.argoproj.io/sync-wave: "-4"
+spec:
+  policyName: vault-ca-bundle-sans
   validationActions: ["Deny"]
 ---
 # Namespaced, so only the cert-manager namespace can use it (a self-signed ClusterIssuer would let
@@ -95,8 +149,9 @@ spec:
   ca:
     secretName: vault-ca
 ---
-# Vault's listener certificate. Short-lived on purpose: cert-manager renews it 3 days before the
-# 7-day expiry, the kubelet updates the mounted Secret, and the tls-reload sidecar
+# Vault's listener certificate. Short-lived on purpose: cert-manager renews it 20 days before the
+# 30-day expiry (so after 10 days; a failed reload leaves 20 days to notice, and verify.sh compares
+# the served certificate with the Secret), the kubelet updates the mounted Secret, and the tls-reload sidecar
 # (platform/vault/values.yaml) sends Vault a SIGHUP, which reloads the listener certificate
 # without a restart or re-seal. SANs: every Service the chart creates (vault, vault-active,
 # vault-standby, vault-internal, vault-ui) in its short and long forms, the per-pod names behind
@@ -111,8 +166,8 @@ metadata:
     argocd.argoproj.io/sync-wave: "-1"
 spec:
   secretName: vault-server-tls
-  duration: 168h
-  renewBefore: 72h
+  duration: 720h
+  renewBefore: 480h
   privateKey:
     algorithm: ECDSA
     size: 256

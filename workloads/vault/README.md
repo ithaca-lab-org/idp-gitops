@@ -93,7 +93,7 @@ Decision and alternatives: idp-infra `docs/adr/0008-vault-tls-in-cluster-ca.md`.
 - **Chain:** self-signed `Issuer cert-manager/vault-ca-selfsigned` -> root CA `Certificate
   cert-manager/vault-ca` (ECDSA P-256, 10 years; Secret in the cert-manager namespace, which
   tenants cannot read) -> `ClusterIssuer vault-ca` -> `Certificate vault/vault-server-tls`
-  (7 days, renewed 3 days before expiry, new key each time).
+  (30 days, renewed 20 days before expiry, i.e. after 10 days, new key each time).
 - **SANs:** `vault`, `vault-active`, `vault-standby`, `vault-internal`, `vault-ui` (short,
   `.vault`, `.vault.svc`, `.vault.svc.cluster.local`), `*.vault-internal[...]` (per-pod names,
   `api_addr`), `localhost`, `127.0.0.1`, `::1`.
@@ -105,7 +105,13 @@ Decision and alternatives: idp-infra `docs/adr/0008-vault-tls-in-cluster-ca.md`.
   (`server.ha.apiAddr`); `cluster_addr` (8201) uses Vault's own internal TLS as before.
 - **Renewal:** Vault reloads its listener certificate on SIGHUP only. The `tls-reload` sidecar
   (same image, same UID, shared process namespace) checks `tls.crt` every 60 s and sends SIGHUP
-  when it changed. No restart, no re-seal. If it fails, a pod restart picks up the new certificate.
+  to the `vault server` process (not to `kubectl exec` CLI processes) when it changed. No restart,
+  no re-seal. If it fails, a pod restart picks up the new certificate; idp-infra `verify.sh`
+  step 8 fails when the served certificate differs from the Secret.
+- **Rollout onto a running cluster:** the chart's StatefulSet uses `updateStrategy: OnDelete`, so
+  merging this onto a running cluster leaves the old plain-HTTP `vault-0` running while VSO,
+  portal-api and idp-operator switch to https: they fail until a human runs
+  `kubectl -n vault delete pod vault-0`. Recommended: merge right before `make down` / `make up`.
 - **Clients:**
 
 | Client | Address | CA |
