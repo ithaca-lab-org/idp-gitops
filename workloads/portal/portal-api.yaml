@@ -60,9 +60,12 @@ spec:
             # Portal Secrets page (workloads/vault/README.md "Portal Secrets"): write-only Vault
             # role portal-secrets, logged in with the projected token below. Images built before
             # the Secrets page ignore these variables. "false": routes 404, no Vault client.
-            # SWITCH: "true" = Secrets page on (enabled 2026-10-29; accepted risk: values reach Vault over plain HTTP until the TLS listener exists).
+            # SWITCH: "true" = Secrets page on (enabled 2026-10-29). Values reach Vault over TLS,
+            # verified against the in-cluster CA only (VAULT_CACERT; needs an image with
+            # VAULT_CACERT support, idp-portal feat/vault-tls; idp-infra ADR 0008).
             - {name: SECRETS_ENABLED, value: "true"}
-            - {name: VAULT_ADDR, value: "http://vault.vault.svc.cluster.local:8200"}
+            - {name: VAULT_ADDR, value: "https://vault.vault.svc.cluster.local:8200"}
+            - {name: VAULT_CACERT, value: /etc/idp/vault-ca/ca.crt}
             - {name: VAULT_SECRETS_ROLE, value: portal-secrets}
           readinessProbe:
             httpGet: {path: /healthz, port: http}
@@ -81,10 +84,17 @@ spec:
           volumeMounts:
             - {name: staging-ca, mountPath: /etc/idp/ca, readOnly: true}
             - {name: vault-token, mountPath: /var/run/secrets/vault, readOnly: true}
+            - {name: vault-ca, mountPath: /etc/idp/vault-ca, readOnly: true}
       volumes:
         - name: staging-ca
           configMap:
             name: staging-ca
+        # Only the PUBLIC ca.crt of Certificate vault-ca-bundle (vault-ca-bundle.yaml), not its key.
+        - name: vault-ca
+          secret:
+            secretName: vault-ca-bundle
+            items:
+              - {key: ca.crt, path: ca.crt}
         # portal-api's own ServiceAccount token with audience "vault", for the Vault Kubernetes
         # auth role portal-secrets. The kubelet rotates it (re-read the file for each login);
         # Vault rejects the default token, whose audience is the API server.

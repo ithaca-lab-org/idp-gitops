@@ -7,12 +7,18 @@ Design: `IDP_NOTES.md` section 10. Vault is rebuilt empty on every `make up` (si
 | Piece | Where | Wave |
 |---|---|---|
 | Vault server (chart 0.34.1, Vault 2.0.4), NetworkPolicies, `vault-config` Job | `apps/vault.yaml`, `platform/vault/values.yaml`, this directory | 7 |
+| Listener TLS: CA, ClusterIssuer `vault-ca`, Certificate `vault-server-tls`, admission policy `vault-ca-scope` | `tls.yaml` (waves -4 to -1 inside the vault app) | 7 |
+| CA bundles (`ca.crt` for clients) | `workloads/vault-secrets-operator/vault-ca-bundle.yaml`, `workloads/portal/vault-ca-bundle.yaml` | 8, 11 |
 | VSO (chart 1.6.2) | `apps/vault-secrets-operator.yaml`, `platform/vault-secrets-operator/values.yaml`, shared VaultConnection `idp-vault` in `workloads/vault-secrets-operator` | 8 |
 | Tailscale Ingress `vault-admin` | `apps/vault-admin-access.yaml`, `workloads/vault-admin-access` | 10 |
 | Demo: Secret `vault-demo/hello` | `apps/vault-demo.yaml`, `workloads/vault-demo` | 10 |
 
 ## Flow on a fresh cluster
 
+0. Inside the vault app, `tls.yaml` goes first (sync waves -4 to -1): the admission policy, the
+   self-signed root CA `cert-manager/vault-ca`, ClusterIssuer `vault-ca`, then Certificate
+   `vault/vault-server-tls`. Argo CD creates the chart's StatefulSet (wave 0) only once that
+   Certificate is Ready; if it never is, there is no `vault-0` (see "TLS listener").
 1. Argo CD installs Vault. The pod starts sealed and uninitialized; the readiness probe still
    reports Ready (`sealedcode=204&uninitcode=204`), so the app is Healthy and nothing waits on it.
 2. `make up` in `idp-infra` runs `scripts/bootstrap-secrets.sh`: `kubectl exec` into `vault-0`,
@@ -77,9 +83,50 @@ below (two throwaway KV prefixes).
   request ServiceAccount tokens, and patch Deployments/StatefulSets/DaemonSets (rollout restarts)
   in every namespace. What it may read from Vault is still limited per namespace by the Vault
   role bound to that namespace's ServiceAccount.
-- **Plain HTTP listener** inside the cluster until TLS from a cert-manager in-cluster CA lands
-  (TODO, ADR); traffic is limited by the NetworkPolicies but not encrypted (the namespaces are
-  not in the ambient mesh).
+- **TLS listener** (see "TLS listener" below; idp-infra ADR 0008): every client verifies Vault's
+  certificate against the in-cluster CA, except the Tailscale proxy (encrypted, not verified).
+
+## TLS listener
+
+Decision and alternatives: idp-infra `docs/adr/0008-vault-tls-in-cluster-ca.md`.
+
+- **Chain:** self-signed `Issuer cert-manager/vault-ca-selfsigned` -> root CA `Certificate
+  cert-manager/vault-ca` (ECDSA P-256, 10 years; Secret in the cert-manager namespace, which
+  tenants cannot read) -> `ClusterIssuer vault-ca` -> `Certificate vault/vault-server-tls`
+  (7 days, renewed 3 days before expiry, new key each time).
+- **SANs:** `vault`, `vault-active`, `vault-standby`, `vault-internal`, `vault-ui` (short,
+  `.vault`, `.vault.svc`, `.vault.svc.cluster.local`), `*.vault-internal[...]` (per-pod names,
+  `api_addr`), `localhost`, `127.0.0.1`, `::1`.
+- **Server:** the chart mounts the Secret at `/vault/userconfig/vault-server-tls/`
+  (`server.extraVolumes`); the listener uses `tls.crt`/`tls.key`, TLS 1.3 only.
+  `global.tlsDisable: false` makes the chart use `https` for the in-pod `VAULT_ADDR`
+  (`https://127.0.0.1:8200`), the readiness probe and the Service port names; `VAULT_CACERT`
+  (`server.extraEnvironmentVars`) lets the in-pod CLI verify. `api_addr` is the per-pod DNS name
+  (`server.ha.apiAddr`); `cluster_addr` (8201) uses Vault's own internal TLS as before.
+- **Renewal:** Vault reloads its listener certificate on SIGHUP only. The `tls-reload` sidecar
+  (same image, same UID, shared process namespace) checks `tls.crt` every 60 s and sends SIGHUP
+  when it changed. No restart, no re-seal. If it fails, a pod restart picks up the new certificate.
+- **Clients:**
+
+| Client | Address | CA |
+|---|---|---|
+| In-pod CLI (idp-infra bootstrap, verify, vault-proof via `kubectl exec`) | `https://127.0.0.1:8200` (chart) | `VAULT_CACERT` env (server Secret's `ca.crt`) |
+| `vault-config` Job | `https://vault.vault.svc.cluster.local:8200` | `vault-server-tls`, key `ca.crt` only |
+| VSO, VaultConnection `vault-secrets-operator/idp-vault` | same | `caCertSecretRef: vault-ca-bundle` (read in the VaultConnection's namespace) |
+| Tenant VaultAuths and `vault-demo` | shared VaultConnection above | none needed |
+| portal-api, idp-operator (`idp-system`) | same | `VAULT_CACERT=/etc/idp/vault-ca/ca.crt` from `idp-system/vault-ca-bundle` (`ca.crt` only) |
+| Tailscale `vault-admin` proxy | Service port named `https` | none: `https+insecure` (encrypted, not verified) |
+
+- **CA distribution without trust-manager:** a throwaway Certificate `vault-ca-bundle` from the same
+  ClusterIssuer in each client namespace (cert-manager writes the CA into `ca.crt` of every Secret
+  it issues). Its own leaf is client-auth only with no SANs. The ValidatingAdmissionPolicy
+  `vault-ca-scope` denies Certificates and CertificateRequests for `ClusterIssuer vault-ca` outside
+  `vault`, `vault-secrets-operator` and `idp-system`: tenants are namespace `admin`, which may
+  create Certificates, and could otherwise mint a certificate for Vault's names.
+- **Troubleshooting:** no `vault-0` -> `kubectl -n vault describe certificate vault-server-tls`
+  and `kubectl get clusterissuer vault-ca` (Argo CD waits on them); VSO errors on the
+  VaultConnection -> `kubectl -n vault-secrets-operator get secret vault-ca-bundle`; portal-api or
+  idp-operator stuck in ContainerCreating -> `kubectl -n idp-system get certificate vault-ca-bundle`.
 
 ## Per-namespace access
 
@@ -366,7 +413,7 @@ idp-infra `scripts/vault-proof.sh` logs in with Kubernetes auth role `vault-proo
 ServiceAccount `vault/vault-proof` only (`proof-serviceaccount.yaml`: no workload, no RBAC, no
 automount), audience `vault`, token TTL = max TTL = 1 h (no renew-self path, so it cannot outlive
 1 h), no default policy, `token_bound_cidrs=127.0.0.1/32` (the token works only from inside
-`vault-0`, where the chart sets `VAULT_ADDR=http://127.0.0.1:8200`). Policy `vault-proof`:
+`vault-0`, where the chart sets `VAULT_ADDR=https://127.0.0.1:8200`; TLS does not change the source address). Policy `vault-proof`:
 
 ```hcl
 path "kv/data/vproof-a/*"     { capabilities = ["create", "update", "read"] }
@@ -399,7 +446,6 @@ bootstrap goes through the API server and the kubelet, not the pod network.
 
 ## Known limits (follow-ups)
 
-- Listener is plain HTTP inside the cluster (see security notes).
 - Single node on a Spot VM: a preemption means a few minutes without Vault. VSO keeps the last
   synced Secrets, so running pods are unaffected; Vault unseals itself on restart through KMS.
 - No Raft snapshots: all Vault data is lost on `make down` by design for now.

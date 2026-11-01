@@ -322,7 +322,7 @@ spec:
               vault policy write vault-proof /tmp/vault-proof.hcl >/dev/null
               # Bound to vault/vault-proof only. TTL = max TTL = 1 h and the policy has no
               # renew-self, so it cannot outlive 1 h. token_bound_cidrs: the token works only from
-              # 127.0.0.1, i.e. inside vault-0 (the chart sets VAULT_ADDR=http://127.0.0.1:8200 there
+              # 127.0.0.1, i.e. inside vault-0 (the chart sets VAULT_ADDR=https://127.0.0.1:8200 there
               # and the script runs every call through `kubectl exec vault-0`).
               vault write auth/kubernetes/role/vault-proof \
                 bound_service_account_names=vault-proof \
@@ -342,7 +342,9 @@ spec:
               unset VAULT_TOKEN
               echo "Vault configured"
           env:
-            - {name: VAULT_ADDR, value: "http://vault.vault.svc.cluster.local:8200"}
+            # TLS listener (workloads/vault/tls.yaml): verified against the in-cluster CA only.
+            - {name: VAULT_ADDR, value: "https://vault.vault.svc.cluster.local:8200"}
+            - {name: VAULT_CACERT, value: /run/secrets/vault-ca/ca.crt}
             - {name: HOME, value: /tmp} # no token helper file in a read-only home
           resources:
             requests: {cpu: 10m, memory: 32Mi}
@@ -353,6 +355,7 @@ spec:
             capabilities: {drop: [ALL]}
           volumeMounts:
             - {name: bootstrap, mountPath: /run/secrets/vault-bootstrap, readOnly: true}
+            - {name: vault-ca, mountPath: /run/secrets/vault-ca, readOnly: true}
             - {name: tmp, mountPath: /tmp}
       containers:
         - name: cleanup
@@ -379,6 +382,14 @@ spec:
             secretName: vault-bootstrap
             optional: true
             defaultMode: 0440
+        # Only the PUBLIC ca.crt of Vault's listener Secret (same namespace); the server's
+        # tls.key is not projected into this pod.
+        - name: vault-ca
+          secret:
+            secretName: vault-server-tls
+            items:
+              - {key: ca.crt, path: ca.crt}
+            defaultMode: 0444
         - name: tmp
           emptyDir: {medium: Memory, sizeLimit: 8Mi}
         # The ServiceAccount token, CA and namespace for in-cluster kubectl, mounted into the
