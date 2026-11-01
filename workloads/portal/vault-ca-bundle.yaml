@@ -1,0 +1,22 @@
+# Only for its ca.crt: the PUBLIC certificate of the in-cluster CA that signs Vault's listener
+# (workloads/vault/tls.yaml). portal-api and idp-operator mount just that key (items: ca.crt) as
+# VAULT_CACERT. The leaf key and certificate in this Secret are unused and harmless: client-auth only
+# (no "server auth" usage, no DNS or IP SANs), so no TLS client accepts it as a server certificate.
+# ClusterIssuer vault-ca is allowed here by the ValidatingAdmissionPolicy vault-ca-scope. Until the
+# Secret exists, the pods that mount it wait in ContainerCreating.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: vault-ca-bundle
+  namespace: idp-system
+spec:
+  secretName: vault-ca-bundle
+  commonName: vault-ca-bundle.idp-system
+  duration: 2160h
+  usages: [digital signature, client auth]
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: vault-ca
+    kind: ClusterIssuer

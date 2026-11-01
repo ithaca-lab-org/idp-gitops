@@ -22,7 +22,7 @@ Each wave waits for the previous one to be Healthy. Gaps in the numbering are de
 | 5 | istio-cni, ztunnel | Node agents (ambient data plane) |
 | 6 | ingress | Let's Encrypt issuers, wildcard certificate, ingress Gateway on the static IP |
 | 7 | echo | Phase 0 test app at `https://echo.apps.ithaca-idp.com` |
-| 7 | vault | Vault (1 Raft node, Cloud KMS auto-unseal, no injector) and its one-time `vault-config` Job; see `workloads/vault/README.md` |
+| 7 | vault | Vault (1 Raft node, Cloud KMS auto-unseal, TLS listener from an in-cluster cert-manager CA, no injector) and its one-time `vault-config` Job; see `workloads/vault/README.md` |
 | 8 | vault-secrets-operator | Vault Secrets Operator (CRDs, controller) |
 | 8 | identity | `identity` namespace, lldap (LDAP) and the Keycloak Postgres; Secrets from `bootstrap-secrets.sh` |
 | 9 | keycloak | Keycloak (official image, codecentric keycloakx chart), realm `ithaca` federated to lldap, `idp-portal` OIDC client |

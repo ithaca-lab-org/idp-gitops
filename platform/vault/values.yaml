@@ -3,10 +3,10 @@
 # idp-infra bootstrap script runs `vault operator init` once the pod is up, and the vault-config
 # PostSync Job (workloads/vault/config-job.yaml) does the rest. See workloads/vault/README.md.
 global:
-  # Plain HTTP inside the cluster, fenced by the NetworkPolicies in workloads/vault.
-  # TODO(ADR): TLS on the listener with a cert-manager Certificate (in-cluster CA) before any
-  # real secret goes in; VSO's VaultConnection then sets caCertSecretRef.
-  tlsDisable: true
+  # TLS on the listener with the cert-manager Certificate vault/vault-server-tls from the in-cluster
+  # CA (workloads/vault/tls.yaml; idp-infra ADR 0008). false switches the chart's scheme to https:
+  # in-pod VAULT_ADDR https://127.0.0.1:8200, HTTPS readiness probe, Service port names "https".
+  tlsDisable: false
 
 injector:
   enabled: false # VSO delivers secrets; no Agent sidecar injector (IDP_NOTES 10.7)
@@ -71,6 +71,20 @@ server:
         readOnlyRootFilesystem: true
         capabilities: {drop: [ALL]} # no IPC_LOCK: disable_mlock = true below, as recommended for Raft
 
+  # The listener certificate (cert-manager Secret vault-server-tls: tls.crt, tls.key, ca.crt), mounted
+  # read-only at /vault/userconfig/vault-server-tls/. 0440: owner root, group fsGroup 1000 (Vault
+  # runs as 100:1000). The StatefulSet is created only after the Certificate is Ready (sync waves in
+  # workloads/vault/tls.yaml), so a missing Secret shows up as "no vault-0", not a crash loop.
+  extraVolumes:
+    - type: secret
+      name: vault-server-tls
+      defaultMode: 288 # 0440
+  # The chart sets VAULT_ADDR=https://127.0.0.1:8200 in the pod but no CA: the in-pod CLI (the
+  # idp-infra bootstrap, verify and proof scripts run it through `kubectl exec`) verifies the
+  # listener against this CA. 127.0.0.1 is a SAN of the certificate.
+  extraEnvironmentVars:
+    VAULT_CACERT: /vault/userconfig/vault-server-tls/ca.crt
+
   # The chart renders the HCL into /tmp at start; with a read-only root it needs a writable /tmp.
   volumes:
     - name: tmp
@@ -84,9 +98,65 @@ server:
   # GKE node upgrades, and a Spot preemption ignores PDBs anyway.
   standalone:
     enabled: false
+  # Certificate renewal: Vault reloads its listener certificate on SIGHUP, not when the file changes.
+  # The tls-reload sidecar checks the mounted tls.crt every 60 s and sends SIGHUP to the vault
+  # process when it changed (the kubelet swaps the Secret's files atomically, cert and key together).
+  # It needs the shared process namespace and the same UID as Vault (no extra capability); it runs
+  # the server image's busybox, nothing else. If it ever fails, Vault keeps serving the old
+  # certificate until expiry (30 days, renewed after 10; verify.sh step 8 compares the served
+  # certificate with the Secret); a pod restart also picks up the new one. Only the server process
+  # (cmdline "vault server ...") is signalled, never a `kubectl exec vault-0 -- vault ...` CLI.
+  shareProcessNamespace: true
+  # With a second container, `kubectl exec/logs vault-0` would print "Defaulted container ..." on
+  # stderr; the idp-infra scripts read the first stderr line of `vault` CLI errors. This keeps
+  # `vault` the silent default.
+  annotations:
+    kubectl.kubernetes.io/default-container: vault
+  extraContainers:
+    - name: tls-reload
+      # Same image as the server (tag + digest above): busybox sh, cksum, pidof.
+      image: hashicorp/vault:2.0.4@sha256:5be49781ecf78bfe775c5309c6a4d9f4e9e040b6c885c99eb2b12fb69855e1a2
+      command: [/bin/sh, -c]
+      args:
+        - |
+          f=/vault/userconfig/vault-server-tls/tls.crt
+          last="$(cksum "$f" 2>/dev/null || true)"
+          while sleep 60; do
+            now="$(cksum "$f" 2>/dev/null || true)"
+            if [ -z "$now" ] || [ "$now" = "$last" ]; then continue; fi
+            srv=""
+            for p in $(pidof vault); do
+              case " $(tr '\0' ' ' <"/proc/$p/cmdline" 2>/dev/null) " in
+                *" server "*) srv="$srv $p" ;;
+              esac
+            done
+            if [ -n "$srv" ] && kill -HUP $srv; then
+              echo "tls-reload: certificate changed, sent SIGHUP to vault server (pid$srv)"
+              last="$now"
+            else
+              echo "tls-reload: certificate changed but no vault server process found; retrying" >&2
+            fi
+          done
+      resources:
+        requests: {cpu: 1m, memory: 8Mi}
+        limits: {memory: 16Mi}
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities: {drop: [ALL]}
+      volumeMounts:
+        - name: userconfig-vault-server-tls # the chart's name for the extraVolumes entry
+          mountPath: /vault/userconfig/vault-server-tls
+          readOnly: true
+
   ha:
     enabled: true
     replicas: 1
+    # The address Vault advertises to clients (redirects, sys/leader). The chart default is
+    # https://<pod IP>:8200, which is not in the certificate; the per-pod DNS name is (wildcard SAN
+    # *.vault-internal.vault.svc.cluster.local). Only $(VAULT_K8S_POD_NAME) is usable here: the
+    # chart defines HOSTNAME after VAULT_API_ADDR, and Kubernetes expands only earlier variables.
+    apiAddr: "https://$(VAULT_K8S_POD_NAME).vault-internal.vault.svc.cluster.local:8200"
     disruptionBudget:
       enabled: false
     raft:
@@ -96,10 +166,15 @@ server:
         ui = true
         disable_mlock = true
 
+        # TLS from the cert-manager Secret (extraVolumes above); reloaded on SIGHUP (tls-reload).
+        # TLS 1.3 only: every client is Go (VSO, portal-api, idp-operator, the vault CLI, the
+        # kubelet probe, the Tailscale proxy). Port 8201 (cluster) always uses Vault's own TLS.
         listener "tcp" {
-          tls_disable     = 1
           address         = "[::]:8200"
           cluster_address = "[::]:8201"
+          tls_cert_file   = "/vault/userconfig/vault-server-tls/tls.crt"
+          tls_key_file    = "/vault/userconfig/vault-server-tls/tls.key"
+          tls_min_version = "tls13"
         }
 
         storage "raft" {

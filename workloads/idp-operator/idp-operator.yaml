@@ -61,16 +61,20 @@ spec:
           type: RuntimeDefault
       containers:
         - name: manager
-          image: us-central1-docker.pkg.dev/project-324502ff-9928-4b17-a89/idp/idp-operator:a88e09fd8754104de3d9366d2fa162f4ea894d62@sha256:be1ed56cdd0aa1fd769da8735b7d50c780a8a026e53bcbe961777e2d7065ba48
+          image: us-central1-docker.pkg.dev/project-324502ff-9928-4b17-a89/idp/idp-operator:3f418e417aecc714e460a6dbf00a9639d0d7c47c@sha256:2300359f25dc3ecee7638b7fbb96c8e15d1045c5a50cbff661ac7c2f0a70c8e9
           args:
             - --leader-elect=true
             - --health-probe-bind-address=:8081
             - --metrics-bind-address=:8443
           env:
             # Per-namespace Vault access and KV purge (idp-portal #19). Everything else uses the
-            # defaults: VAULT_ADDR http://vault.vault.svc.cluster.local:8200, purge role
-            # idp-operator-purge, token file /var/run/secrets/vault/token.
+            # defaults: purge role idp-operator-purge, token file /var/run/secrets/vault/token.
             - {name: VAULT_ENABLED, value: "true"}
+            # Vault's TLS listener, verified against the in-cluster CA only (needs an image with
+            # VAULT_CACERT support, idp-portal feat/vault-tls; idp-infra ADR 0008). The CA comes
+            # from Secret vault-ca-bundle (workloads/portal/vault-ca-bundle.yaml, wave 11 < 12).
+            - {name: VAULT_ADDR, value: "https://vault.vault.svc.cluster.local:8200"}
+            - {name: VAULT_CACERT, value: /etc/idp/vault-ca/ca.crt}
           ports:
             - {name: metrics, containerPort: 8443}
             - {name: probes, containerPort: 8081}
@@ -90,7 +94,14 @@ spec:
             capabilities: {drop: [ALL]}
           volumeMounts:
             - {name: vault-token, mountPath: /var/run/secrets/vault, readOnly: true}
+            - {name: vault-ca, mountPath: /etc/idp/vault-ca, readOnly: true}
       volumes:
+        # Only the PUBLIC ca.crt of Certificate idp-system/vault-ca-bundle, not its key.
+        - name: vault-ca
+          secret:
+            secretName: vault-ca-bundle
+            items:
+              - {key: ca.crt, path: ca.crt}
         # The operator's own ServiceAccount token with audience "vault", for the Vault Kubernetes
         # auth role idp-operator-purge (workloads/vault/README.md "Per-namespace access"). The
         # kubelet rotates it; Vault rejects the default token, whose audience is the API server.

@@ -1,6 +1,10 @@
 # Private access to the Vault UI and API: https://vault-admin.<tailnet>.ts.net (Tailscale certificate),
-# reachable only from devices on the tailnet. Plain HTTP from the proxy to Vault inside the cluster
-# (see platform/vault/values.yaml, TLS later). The Tailscale proxies are allowed in by
+# reachable only from devices on the tailnet. The proxy reaches Vault's TLS listener over HTTPS: the
+# Tailscale operator picks `https+insecure://` when the backend port is named "https" (or is 443),
+# so the hop is encrypted but the proxy does not verify Vault's certificate (it dials the Service's
+# ClusterIP, and the operator has no CA setting; tailscale cmd/k8s-operator/ingress.go). The port
+# must be referenced BY NAME: a number (8200) makes the proxy speak plain HTTP to a TLS listener.
+# The Tailscale proxies are allowed in by
 # workloads/vault/networkpolicy.yaml. Add vault-admin to TS_CLEANUP_HOSTNAMES in idp-infra.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -13,7 +17,7 @@ spec:
     service:
       name: vault # chart Service on 8200 (the UI is served by Vault itself; vault-ui is the same port)
       port:
-        number: 8200
+        name: https # the chart names the 8200 port "https" when global.tlsDisable is false
   tls:
     - hosts:
         - vault-admin

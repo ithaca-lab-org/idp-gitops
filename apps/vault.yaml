@@ -1,7 +1,8 @@
 # Wave 7: Vault (official hashicorp/vault chart), one server with Raft storage, Cloud KMS auto-unseal,
 # UI on, no injector. Wave 7 because it only needs the network layer: Istio CNI/ztunnel (5) are on
 # the nodes before any non-mesh pod relies on Dataplane V2 policies, cert-manager (1) is there for
-# the planned listener TLS, and it does not depend on identity (8-10). It runs before VSO (8) and
+# the listener TLS (workloads/vault/tls.yaml, waves -4..-1 inside this app, so the StatefulSet only
+# appears once its certificate is Ready), and it does not depend on identity (8-10). It runs before VSO (8) and
 # before the portal (11), which will read secrets through VSO later.
 # It cannot wedge the platform: the readiness probe is Ready while Vault is sealed or uninitialized,
 # so this app turns Healthy without a human step, and the one-time configuration is a PostSync Job

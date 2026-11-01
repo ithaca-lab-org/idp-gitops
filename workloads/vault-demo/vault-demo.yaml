@@ -1,6 +1,7 @@
 # VSO demo: Vault kv/vault-demo/hello (key message, written by the vault-config Job) is synced into
 # the Kubernetes Secret vault-demo/hello every 60 s. VSO logs in with Kubernetes auth as the
-# ServiceAccount vault-demo/vault-demo (role vso-demo, policy vso-demo: read that one path only).
+# ServiceAccount vault-demo/vault-demo (role vso-demo, policy vso-demo: read that one path only),
+# over TLS through the shared VaultConnection vault-secrets-operator/idp-vault.
 # Until Vault is configured, VSO marks the VaultStaticSecret with an error and retries by itself.
 # Check: kubectl -n vault-demo get secret hello -o jsonpath='{.data.message}' | base64 -d
 apiVersion: v1
@@ -20,22 +21,14 @@ metadata:
 automountServiceAccountToken: false
 ---
 apiVersion: secrets.hashicorp.com/v1beta1
-kind: VaultConnection
-metadata:
-  name: vault
-  namespace: vault-demo
-spec:
-  # Plain HTTP inside the cluster until the listener gets TLS (platform/vault/values.yaml TODO).
-  address: http://vault.vault.svc.cluster.local:8200
-  skipTLSVerify: false
----
-apiVersion: secrets.hashicorp.com/v1beta1
 kind: VaultAuth
 metadata:
   name: vault-demo
   namespace: vault-demo
 spec:
-  vaultConnectionRef: vault
+  # The shared TLS connection (address + CA), like tenant namespaces: VSO reads its CA Secret in
+  # vault-secrets-operator, so this namespace needs no copy of the CA.
+  vaultConnectionRef: vault-secrets-operator/idp-vault
   method: kubernetes
   mount: kubernetes
   kubernetes:
