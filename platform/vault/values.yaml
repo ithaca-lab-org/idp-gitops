@@ -105,6 +105,11 @@ server:
   # the server image's busybox, nothing else. If it ever fails, Vault keeps serving the old
   # certificate until expiry (7 days); a pod restart also picks up the new one.
   shareProcessNamespace: true
+  # With a second container, `kubectl exec/logs vault-0` would print "Defaulted container ..." on
+  # stderr; the idp-infra scripts read the first stderr line of `vault` CLI errors. This keeps
+  # `vault` the silent default.
+  annotations:
+    kubectl.kubernetes.io/default-container: vault
   extraContainers:
     - name: tls-reload
       # Same image as the server (tag + digest above): busybox sh, cksum, pidof.
