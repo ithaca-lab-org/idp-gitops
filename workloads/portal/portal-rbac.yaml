@@ -16,6 +16,13 @@ rules:
   - apiGroups: ["idp.ithaca-idp.com"]
     resources: ["managedsecrets"]
     verbs: ["get", "create", "delete"]
+  # Portal Workloads page (Order #03): one WorkloadIdentity per workload. get/list/create only: no
+  # update, patch, delete or watch. list is needed for the page (the API requires a namespace and
+  # checks the caller's admin groups first; names are not secret). Create is confined by the
+  # idp-portal-scope admission policy to managed namespaces, empty spec, no labels/annotations.
+  - apiGroups: ["idp.ithaca-idp.com"]
+    resources: ["workloadidentities"]
+    verbs: ["get", "list", "create"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
