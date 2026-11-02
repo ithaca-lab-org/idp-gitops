@@ -38,7 +38,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: portal-api
-          image: us-central1-docker.pkg.dev/project-324502ff-9928-4b17-a89/idp/portal-api:3f418e417aecc714e460a6dbf00a9639d0d7c47c@sha256:9fc69264a796304e15b1177e2e2bd08b34a999fa70298a10196411dbf87d34fb
+          image: us-central1-docker.pkg.dev/project-324502ff-9928-4b17-a89/idp/portal-api:cf7adb3db46c62c4500f6308df4b3b938711a8a8@sha256:9ec8c041825d569ee511108d474811492ecf48c7a405b543f9d8a8bea0c197e0
           ports:
             - {name: http, containerPort: 8080}
           env:
@@ -64,6 +64,7 @@ spec:
             # verified against the in-cluster CA only (VAULT_CACERT; needs an image with
             # VAULT_CACERT support, idp-portal feat/vault-tls; idp-infra ADR 0008).
             - {name: SECRETS_ENABLED, value: "true"}
+            - {name: WORKLOADS_ENABLED, value: "true"}
             - {name: VAULT_ADDR, value: "https://vault.vault.svc.cluster.local:8200"}
             - {name: VAULT_CACERT, value: /etc/idp/vault-ca/ca.crt}
             - {name: VAULT_SECRETS_ROLE, value: portal-secrets}
