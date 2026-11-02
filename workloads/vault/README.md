@@ -200,7 +200,6 @@ path "kv/metadata/echo/*" { capabilities = ["deny"] }
 path "kv/metadata/istio-*" { capabilities = ["deny"] }
 path "kv/metadata/kube-*" { capabilities = ["deny"] }
 path "kv/metadata/gke-*" { capabilities = ["deny"] }
-path "kv/metadata/vproof-*" { capabilities = ["deny"] }
 path "auth/token/lookup-self" { capabilities = ["read"] }
 path "auth/token/renew-self" { capabilities = ["update"] }
 path "auth/token/revoke-self" { capabilities = ["update"] }
