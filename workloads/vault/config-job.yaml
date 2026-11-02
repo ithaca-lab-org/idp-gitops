@@ -235,7 +235,6 @@ spec:
                 'path "kv/metadata/istio-*" {' "$DENY" '}' \
                 'path "kv/metadata/kube-*" {' "$DENY" '}' \
                 'path "kv/metadata/gke-*" {' "$DENY" '}' \
-                'path "kv/metadata/vproof-*" {' "$DENY" '}' \
                 'path "auth/token/lookup-self" {' '  capabilities = ["read"]' '}' \
                 'path "auth/token/renew-self" {' '  capabilities = ["update"]' '}' \
                 'path "auth/token/revoke-self" {' '  capabilities = ["update"]' '}' \
