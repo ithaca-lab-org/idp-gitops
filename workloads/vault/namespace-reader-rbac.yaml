@@ -1,0 +1,26 @@
+# Lets the Vault server get single Namespace objects (their labels), nothing else. Needed for the
+# Kubernetes auth role workload-reader (config-job.yaml), which is bound with
+# bound_service_account_namespace_selector to namespaces labelled app.kubernetes.io/managed-by=idp-operator,
+# so only tenant namespaces (never argocd, idp-system, vault, kube-*) can log in to it.
+# Tenants cannot label namespaces (cluster-scoped; the admin role does not cover it).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: vault-namespace-reader
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: vault-namespace-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: vault-namespace-reader
+subjects:
+  - kind: ServiceAccount
+    name: vault
+    namespace: vault

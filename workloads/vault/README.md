@@ -162,6 +162,23 @@ path "auth/token/revoke-self" { capabilities = ["update"] }
 `audience=vault`, `token_policies=ns-reader`, `token_no_default_policy=true`, `token_ttl=10m`,
 `token_max_ttl=1h`.
 
+**Policy `workload-reader`** and **role `workload-reader`** (WorkloadIdentity, Order #03): the role
+accepts any ServiceAccount (`bound_service_account_names=*`) but only in namespaces labelled
+`app.kubernetes.io/managed-by=idp-operator` (`bound_service_account_namespace_selector`; Vault
+reads the label through ClusterRole `vault-namespace-reader`, get on namespaces), so platform
+namespaces cannot log in. Also `alias_name_source=serviceaccount_uid`, `audience=vault`,
+`token_no_default_policy=true`, ttl 10m, max 1h. The policy lets a caller read only
+`kv/data/<its namespace>/<its ServiceAccount name>/*` (and read/list on the matching
+`kv/metadata` path), both taken from the verified alias metadata (`service_account_namespace`,
+`service_account_name`). Path denies for platform namespaces would not work (a deny beats an allow
+only on the same path), which is why the role is bound by label instead. The operator creates one
+VSO `VaultAuth` per workload (role `workload-reader`, ServiceAccount `<workload>`). Across
+namespaces this isolates; inside one namespace it does not, because a tenant admin can mint
+`vault-reader` tokens (`ns-reader` reads all of `kv/<ns>/*`), and a ServiceAccount named like a
+workload reads that workload's path. Every new ServiceAccount that logs in creates a Vault entity.
+Like every Vault-side change it arrives with the next `make down`/`make up`. Unverified until a
+cluster run: that Vault 2.0.4 accepts the selector with this RBAC (add a proof to `vault-proof.sh`).
+
 **Policy `ns-purge`** and **role `idp-operator-purge`** (bound to `idp-system/idp-operator`,
 audience `vault`, `token_no_default_policy=true`, ttl 5m, max 15m): when a TeamNamespace is
 deleted, the operator walks `kv/metadata/<ns>/` with LIST and removes each key with
@@ -183,6 +200,7 @@ path "kv/metadata/echo/*" { capabilities = ["deny"] }
 path "kv/metadata/istio-*" { capabilities = ["deny"] }
 path "kv/metadata/kube-*" { capabilities = ["deny"] }
 path "kv/metadata/gke-*" { capabilities = ["deny"] }
+path "kv/metadata/vproof-*" { capabilities = ["deny"] }
 path "auth/token/lookup-self" { capabilities = ["read"] }
 path "auth/token/renew-self" { capabilities = ["update"] }
 path "auth/token/revoke-self" { capabilities = ["update"] }
