@@ -235,6 +235,7 @@ spec:
                 'path "kv/metadata/istio-*" {' "$DENY" '}' \
                 'path "kv/metadata/kube-*" {' "$DENY" '}' \
                 'path "kv/metadata/gke-*" {' "$DENY" '}' \
+                'path "kv/metadata/vproof-*" {' "$DENY" '}' \
                 'path "auth/token/lookup-self" {' '  capabilities = ["read"]' '}' \
                 'path "auth/token/renew-self" {' '  capabilities = ["update"]' '}' \
                 'path "auth/token/revoke-self" {' '  capabilities = ["update"]' '}' \
@@ -248,6 +249,38 @@ spec:
                 alias_name_source=serviceaccount_uid \
                 audience=vault \
                 token_policies=ns-reader \
+                token_no_default_policy=true \
+                token_ttl=10m \
+                token_max_ttl=1h >/dev/null
+              # Per-workload access (WorkloadIdentity, Order #03): a caller reads only
+              # kv/<its namespace>/<its ServiceAccount name>/*, both taken from the verified alias
+              # metadata. The role accepts any ServiceAccount, but only in namespaces labelled
+              # app.kubernetes.io/managed-by=idp-operator (bound_service_account_namespace_selector;
+              # Vault reads the label with the get/list on namespaces from vault-namespace-reader).
+              # Platform namespaces therefore cannot log in at all. Path denies cannot do this job:
+              # a deny only beats an allow on the very same path, and the templated allow is more
+              # specific than any prefix deny. The empty-name deny below is the same path as the
+              # allow, so it does merge. An unresolvable template drops the allow rule. Across
+              # namespaces this isolates; inside one namespace it does not (a tenant admin can mint
+              # vault-reader tokens, which read kv/<ns>/*), see ADR 0009.
+              echo "per-workload policy and role: workload-reader"
+              SA="{{identity.entity.aliases.${ACC}.metadata.service_account_name}}"
+              printf '%s\n' \
+                "path \"kv/data/${NS}/${SA}/*\" {" '  capabilities = ["read"]' '}' \
+                "path \"kv/metadata/${NS}/${SA}/*\" {" '  capabilities = ["read", "list"]' '}' \
+                "path \"kv/data/${NS}//*\" {" "$DENY" '}' \
+                "path \"kv/metadata/${NS}//*\" {" "$DENY" '}' \
+                'path "auth/token/lookup-self" {' '  capabilities = ["read"]' '}' \
+                'path "auth/token/renew-self" {' '  capabilities = ["update"]' '}' \
+                'path "auth/token/revoke-self" {' '  capabilities = ["update"]' '}' \
+                > /tmp/workload-reader.hcl
+              vault policy write workload-reader /tmp/workload-reader.hcl >/dev/null
+              vault write auth/kubernetes/role/workload-reader \
+                'bound_service_account_names=*' \
+                'bound_service_account_namespace_selector={"matchLabels":{"app.kubernetes.io/managed-by":"idp-operator"}}' \
+                alias_name_source=serviceaccount_uid \
+                audience=vault \
+                token_policies=workload-reader \
                 token_no_default_policy=true \
                 token_ttl=10m \
                 token_max_ttl=1h >/dev/null
