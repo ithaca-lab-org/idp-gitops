@@ -1,0 +1,34 @@
+# Lets the idp-operator keep spec.dnsNames of the platform certificate wildcard-apps equal to
+# *.apps.ithaca-idp.com plus one *.<namespace>.apps.ithaca-idp.com per tenant namespace, because a
+# wildcard matches one label and tenant hostnames are <workload>.<namespace>.apps... (idp-infra
+# ADR 0009). update/patch only on that one object (resourceNames); no create, no delete. What the
+# operator may write into it is pinned by its admission policy (idp-portal operator-scope.yaml).
+# Reads are limited to this namespace (the operator's cache is restricted to it). apps/ingress.yaml
+# ignores spec.dnsNames of the Certificate so Argo CD's self-heal does not undo the operator.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: idp-operator-tenant-cert
+  namespace: istio-ingress
+rules:
+  - apiGroups: ["cert-manager.io"]
+    resources: ["certificates"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["cert-manager.io"]
+    resources: ["certificates"]
+    resourceNames: ["wildcard-apps"]
+    verbs: ["update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: idp-operator-tenant-cert
+  namespace: istio-ingress
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: idp-operator-tenant-cert
+subjects:
+  - kind: ServiceAccount
+    name: idp-operator
+    namespace: idp-system
