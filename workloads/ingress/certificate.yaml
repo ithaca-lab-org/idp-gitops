@@ -17,25 +17,3 @@ spec:
     kind: ClusterIssuer
   dnsNames:
     - "*.apps.ithaca-idp.com"
----
-# Second certificate for tenant workload hostnames <workload>.<namespace>.apps.ithaca-idp.com
-# (idp-infra ADR 0009). A wildcard matches ONE label, so wildcard-apps-tls cannot serve them.
-# Istio accepts at most two certificateRefs per listener (buildTLS), so the https listener serves
-# wildcard-apps-tls plus this one, selected by SNI. The dnsNames list starts with a PROOF name only
-# (*.sniproof.apps...), to show on a cluster that two certificates with different names are
-# selected by SNI; the operator will add one `*.<namespace>.apps.ithaca-idp.com` per managed
-# namespace later. Staging issuer for the same reasons as above.
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: tenant-apps
-  namespace: istio-ingress
-  annotations:
-    argocd.argoproj.io/sync-wave: "2"
-spec:
-  secretName: tenant-apps-tls
-  issuerRef:
-    name: letsencrypt-staging
-    kind: ClusterIssuer
-  dnsNames:
-    - "*.sniproof.apps.ithaca-idp.com"

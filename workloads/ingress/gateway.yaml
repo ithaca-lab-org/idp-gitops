@@ -29,11 +29,8 @@ spec:
       hostname: "*.apps.ithaca-idp.com"
       tls:
         mode: Terminate
-        # At most two certificateRefs (Istio). Envoy picks by SNI: wildcard-apps-tls for
-        # <app>.apps..., tenant-apps-tls for <workload>.<namespace>.apps... (certificate.yaml).
         certificateRefs:
           - name: wildcard-apps-tls
-          - name: tenant-apps-tls
       allowedRoutes:
         namespaces:
           from: Selector
