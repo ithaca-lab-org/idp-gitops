@@ -21,3 +21,14 @@ spec:
     automated:
       prune: true
       selfHeal: true
+    syncOptions:
+      - RespectIgnoreDifferences=true # else any sync resets dnsNames to the Git list
+  ignoreDifferences:
+    # The idp-operator maintains the tenant names (*.<namespace>.apps...) in this list; Git only
+    # holds the platform wildcard. See workloads/ingress/tenant-cert-rbac.yaml.
+    - group: cert-manager.io
+      kind: Certificate
+      name: wildcard-apps
+      namespace: istio-ingress
+      jsonPointers:
+        - /spec/dnsNames
