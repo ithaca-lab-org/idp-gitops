@@ -61,7 +61,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: manager
-          image: us-central1-docker.pkg.dev/project-324502ff-9928-4b17-a89/idp/idp-operator:896e5badcef73b5458f3cdc68ec1466d7f105c57@sha256:404319b2a7e1d8c7201aead0a33d621cf20e23c808dc8c5b60bd75dbc0524ec3
+          image: us-central1-docker.pkg.dev/project-324502ff-9928-4b17-a89/idp/idp-operator:01b5f72ed7bded62fb34f6a9796c1050f43c6f2e@sha256:03b392c75c1bbf80bdae1eb1b9a25da2d2370931af2ae69d5067f2445b1038f8
           args:
             - --leader-elect=true
             - --health-probe-bind-address=:8081
@@ -75,6 +75,10 @@ spec:
             # from Secret vault-ca-bundle (workloads/portal/vault-ca-bundle.yaml, wave 11 < 12).
             - {name: VAULT_ADDR, value: "https://vault.vault.svc.cluster.local:8200"}
             - {name: VAULT_CACERT, value: /etc/idp/vault-ca/ca.crt}
+            # Tenant hostnames in the platform certificate (idp-infra ADR 0009 option 2b): the operator
+            # keeps spec.dnsNames of istio-ingress/wildcard-apps in step with the TeamNamespaces. Needs
+            # workloads/ingress/tenant-cert-rbac.yaml and the idp-operator-scope policy of this commit.
+            - {name: TENANT_CERT_ENABLED, value: "true"}
           ports:
             - {name: metrics, containerPort: 8443}
             - {name: probes, containerPort: 8081}

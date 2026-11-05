@@ -15,13 +15,13 @@ spec:
       targetRevision: main
       path: workloads/idp-operator
     - repoURL: https://github.com/ithaca-lab-org/idp-portal.git
-      targetRevision: 896e5badcef73b5458f3cdc68ec1466d7f105c57
+      targetRevision: 01b5f72ed7bded62fb34f6a9796c1050f43c6f2e
       path: operator/config/crd/bases
     - repoURL: https://github.com/ithaca-lab-org/idp-portal.git
-      targetRevision: 896e5badcef73b5458f3cdc68ec1466d7f105c57
+      targetRevision: 01b5f72ed7bded62fb34f6a9796c1050f43c6f2e
       path: operator/config/rbac
     - repoURL: https://github.com/ithaca-lab-org/idp-portal.git
-      targetRevision: 896e5badcef73b5458f3cdc68ec1466d7f105c57
+      targetRevision: 01b5f72ed7bded62fb34f6a9796c1050f43c6f2e
       path: operator/config/policy
   destination:
     server: https://kubernetes.default.svc
