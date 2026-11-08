@@ -1,0 +1,100 @@
+# idp-broker: turns BucketClaim and ResourceGrant resources into Cloud Storage buckets and bucket-level
+# IAM bindings for principal://.../ns/<ns>/sa/<workload> (idp-infra ADR 0010). A separate Deployment
+# from the operator on purpose: only this one carries Google credentials.
+# SHIPS DISABLED (BROKER_ENABLED=false): the process runs idle with probes only and makes no Google
+# call. Before enabling it (and RESOURCES_ENABLED in portal-api.yaml) a human must set the org-policy
+# guardrails in idp-infra docs/tenant-resources.md. The ClusterRole/Role idp-broker and the admission
+# policy idp-broker-scope come from the idp-portal repo at the same commit as the image (see
+# apps/idp-operator.yaml). The ServiceAccount name is part of that policy (idp-system/idp-broker): do
+# not rename it. The Google service account idp-broker@ and its conditioned IAM (buckets named idp-*,
+# menu roles only) come from idp-infra (modules/tenant-resources); Workload Identity binds this
+# ServiceAccount to it. No NetworkPolicy of its own: idp-system denies ingress by default (the broker
+# serves only kubelet probes, metrics are off) and egress is not restricted in this namespace.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: idp-broker
+  namespace: idp-system
+  annotations:
+    iam.gke.io/gcp-service-account: idp-broker@project-324502ff-9928-4b17-a89.iam.gserviceaccount.com
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: idp-broker
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: idp-broker
+subjects:
+  - kind: ServiceAccount
+    name: idp-broker
+    namespace: idp-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: idp-broker
+  namespace: idp-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: idp-broker
+subjects:
+  - kind: ServiceAccount
+    name: idp-broker
+    namespace: idp-system
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: idp-broker
+  namespace: idp-system
+  labels:
+    app.kubernetes.io/name: idp-broker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: idp-broker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: idp-broker
+    spec:
+      serviceAccountName: idp-broker
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: broker
+          image: us-central1-docker.pkg.dev/project-324502ff-9928-4b17-a89/idp/idp-broker:5d37323ef83d28e4f6d83426a85145313e5a12db@sha256:9997fddf2db6de7ae6f1baced3e4ec5e915276b47357aba9631d940e945132b5
+          args:
+            - --leader-elect=true
+            - --health-probe-bind-address=:8081
+          env:
+            # SWITCH: "false" = idle, no Google calls. Flip to "true" only after the guardrails in
+            # idp-infra docs/tenant-resources.md are set and the proof (resource-proof.sh) is ready.
+            - {name: BROKER_ENABLED, value: "false"}
+            - {name: PROJECT_ID, value: project-324502ff-9928-4b17-a89}
+            - {name: PROJECT_NUMBER, value: "278184209873"}
+            - {name: BUCKET_LOCATION, value: us-central1}
+          ports:
+            - {name: probes, containerPort: 8081}
+          readinessProbe:
+            httpGet: {path: /readyz, port: probes}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /healthz, port: probes}
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests: {cpu: 20m, memory: 64Mi}
+            limits: {memory: 256Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}

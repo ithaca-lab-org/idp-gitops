@@ -23,6 +23,16 @@ rules:
   - apiGroups: ["idp.ithaca-idp.com"]
     resources: ["workloadidentities"]
     verbs: ["get", "list", "create"]
+  # Portal Resources page (ADR 0010): bucket claims and access grants. Claims: get/list/create only (no
+  # delete: removing a claim can orphan data). Grants: get/list/create/delete (delete = revoke access).
+  # No update, patch or watch. Create is confined by the idp-portal-scope admission policy to managed
+  # namespaces with the fixed shapes; the flag RESOURCES_ENABLED is off by default.
+  - apiGroups: ["idp.ithaca-idp.com"]
+    resources: ["bucketclaims"]
+    verbs: ["get", "list", "create"]
+  - apiGroups: ["idp.ithaca-idp.com"]
+    resources: ["resourcegrants"]
+    verbs: ["get", "list", "create", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

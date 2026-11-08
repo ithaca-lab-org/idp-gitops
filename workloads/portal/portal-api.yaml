@@ -38,7 +38,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: portal-api
-          image: us-central1-docker.pkg.dev/project-324502ff-9928-4b17-a89/idp/portal-api:94c6e27b5b8ec6b91dad55386eaebe9fd9dc6d2a@sha256:1e2f3353552872718051339451e356c105ec86be4aa82cb100dddbbffdb772fd
+          image: us-central1-docker.pkg.dev/project-324502ff-9928-4b17-a89/idp/portal-api:5d37323ef83d28e4f6d83426a85145313e5a12db@sha256:2d6caa9e472e0ad06378b453b94c7645f858f68793e684b277d3a7a96af9c1e4
           ports:
             - {name: http, containerPort: 8080}
           env:
@@ -65,6 +65,10 @@ spec:
             # VAULT_CACERT support, idp-portal feat/vault-tls; idp-infra ADR 0008).
             - {name: SECRETS_ENABLED, value: "true"}
             - {name: WORKLOADS_ENABLED, value: "true"}
+            # Portal Resources page: buckets and grants (idp-infra ADR 0010). SWITCH: "false" = routes 404.
+            # Do NOT turn on before the org-policy guardrails (idp-infra docs/tenant-resources.md) are set,
+            # the idp-broker Deployment is enabled (workloads/idp-operator/idp-broker.yaml) and the proof passed.
+            - {name: RESOURCES_ENABLED, value: "false"}
             - {name: VAULT_ADDR, value: "https://vault.vault.svc.cluster.local:8200"}
             - {name: VAULT_CACERT, value: /etc/idp/vault-ca/ca.crt}
             - {name: VAULT_SECRETS_ROLE, value: portal-secrets}
