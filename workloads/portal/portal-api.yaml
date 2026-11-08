@@ -65,10 +65,11 @@ spec:
             # VAULT_CACERT support, idp-portal feat/vault-tls; idp-infra ADR 0008).
             - {name: SECRETS_ENABLED, value: "true"}
             - {name: WORKLOADS_ENABLED, value: "true"}
-            # Portal Resources page: buckets and grants (idp-infra ADR 0010). SWITCH: "false" = routes 404.
-            # Do NOT turn on before the org-policy guardrails (idp-infra docs/tenant-resources.md) are set,
-            # the idp-broker Deployment is enabled (workloads/idp-operator/idp-broker.yaml) and the proof passed.
-            - {name: RESOURCES_ENABLED, value: "false"}
+            # Portal Resources page: buckets and grants (idp-infra ADR 0010). SWITCH: "true" = on (2026-11-08,
+            # after scripts/resource-proof.sh passed: grants, pod access, reader vs writer, revoke, role limit,
+            # orphan/empty release). "false" = routes 404. Needs the idp-broker enabled
+            # (workloads/idp-operator/idp-broker.yaml) and the org-policy guardrails (idp-infra docs/tenant-resources.md).
+            - {name: RESOURCES_ENABLED, value: "true"}
             - {name: VAULT_ADDR, value: "https://vault.vault.svc.cluster.local:8200"}
             - {name: VAULT_CACERT, value: /etc/idp/vault-ca/ca.crt}
             - {name: VAULT_SECRETS_ROLE, value: portal-secrets}
