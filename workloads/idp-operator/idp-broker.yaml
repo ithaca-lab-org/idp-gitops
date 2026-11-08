@@ -73,7 +73,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: broker
-          image: us-central1-docker.pkg.dev/project-324502ff-9928-4b17-a89/idp/idp-broker:5d37323ef83d28e4f6d83426a85145313e5a12db@sha256:9997fddf2db6de7ae6f1baced3e4ec5e915276b47357aba9631d940e945132b5
+          image: us-central1-docker.pkg.dev/project-324502ff-9928-4b17-a89/idp/idp-broker:cb0fd84ad0ae33daf22787c5ca7cfc55566bcbab@sha256:cda882d7ad0e8a5be13f3c28d16d478f296a410902ee1ff3c279a5dc79463149
           args:
             - --leader-elect=true
             - --health-probe-bind-address=:8081
