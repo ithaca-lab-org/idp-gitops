@@ -1,9 +1,11 @@
 # idp-broker: turns BucketClaim and ResourceGrant resources into Cloud Storage buckets and bucket-level
 # IAM bindings for principal://.../ns/<ns>/sa/<workload> (idp-infra ADR 0010). A separate Deployment
 # from the operator on purpose: only this one carries Google credentials.
-# SHIPS DISABLED (BROKER_ENABLED=false): the process runs idle with probes only and makes no Google
-# call. Before enabling it (and RESOURCES_ENABLED in portal-api.yaml) a human must set the org-policy
-# guardrails in idp-infra docs/tenant-resources.md. The ClusterRole/Role idp-broker and the admission
+# ENABLED (BROKER_ENABLED=true, 2026-11-08) so the proof idp-infra scripts/resource-proof.sh can run; the
+# portal flag RESOURCES_ENABLED in portal-api.yaml stays false until that proof has passed. Set false
+# to make the process idle again (probes only, no Google call). Prerequisites that are in place: the org
+# policies storage.publicAccessPrevention and storage.uniformBucketLevelAccess are enforced
+# (idp-infra docs/tenant-resources.md; the member allow-list is NOT set: accepted risk). The ClusterRole/Role idp-broker and the admission
 # policy idp-broker-scope come from the idp-portal repo at the same commit as the image (see
 # apps/idp-operator.yaml). The ServiceAccount name is part of that policy (idp-system/idp-broker): do
 # not rename it. The Google service account idp-broker@ and its conditioned IAM (buckets named idp-*,
@@ -76,9 +78,9 @@ spec:
             - --leader-elect=true
             - --health-probe-bind-address=:8081
           env:
-            # SWITCH: "false" = idle, no Google calls. Flip to "true" only after the guardrails in
-            # idp-infra docs/tenant-resources.md are set and the proof (resource-proof.sh) is ready.
-            - {name: BROKER_ENABLED, value: "false"}
+            # SWITCH: "true" = the controllers run and call Google (bucket create/delete, bucket IAM) as
+            # idp-broker@; "false" = idle process, no Google calls. Enabled to run resource-proof.sh.
+            - {name: BROKER_ENABLED, value: "true"}
             - {name: PROJECT_ID, value: project-324502ff-9928-4b17-a89}
             - {name: PROJECT_NUMBER, value: "278184209873"}
             - {name: BUCKET_LOCATION, value: us-central1}
