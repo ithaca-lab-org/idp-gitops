@@ -3,6 +3,17 @@ crds:
   enabled: true
   keep: false # the cluster is rebuilt often; CRDs go with the release
 
+# Do NOT aggregate the cert-manager ClusterRoles into the Kubernetes `admin`/`edit`/`view` roles (the chart default).
+# Tenant namespace admins hold `admin`, so the default would let them create Certificates, CertificateRequests and
+# Issuers: a Certificate that references our letsencrypt-* ClusterIssuer can request ANY name in the DNS zone through
+# DNS-01 (a valid certificate for auth.apps... or portal.apps...), a tenant can exhaust the Let's Encrypt limits that
+# the platform's own renewals need, and an Issuer with an http01 gatewayHTTPRoute solver can attract traffic for other
+# tenants' hostnames. Platform components that need cert-manager objects have explicit RBAC (for example
+# workloads/ingress/tenant-cert-rbac.yaml). Tenants get hostnames through the platform, never certificates.
+global:
+  rbac:
+    aggregateClusterRoles: false
+
 resources:
   requests:
     cpu: 25m
