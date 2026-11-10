@@ -10,3 +10,9 @@ kubernetes:
       namespaces: [spike-app]
       kinds: [deployments, replicaSets, pods, services]
       cacheThreads: 1
+# Anonymous git/repo artifact account so Rosco can bake Kustomize from a public repo (no credentials).
+artifacts:
+  gitrepo:
+    enabled: true
+    accounts:
+      - name: public-git
