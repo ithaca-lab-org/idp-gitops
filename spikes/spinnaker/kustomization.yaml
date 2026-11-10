@@ -31,8 +31,6 @@ configMapGenerator:
   - name: clouddriver
     behavior: merge
     files: [clouddriver.yml=config/clouddriver.yml]
-  - name: spike-gate
-    files: [gate.yml=config/gate.yml]
   - name: spike-front50
     files: [front50.yml=config/front50.yml]
   - name: spike-spinnaker
@@ -53,9 +51,10 @@ patches:
         value: {configMap: {name: spike-spinnaker, items: [{key: spinnaker.yml, path: spike/spinnaker.yml}]}}
   - target: {group: apps, version: v1, kind: Deployment, name: gate}
     patch: |-
+      # Env beats upstream's gate-local.yml, which sets api-tokens.enabled: false (a file in spike/ loses to it).
       - op: add
-        path: /spec/template/spec/volumes/0/projected/sources/-
-        value: {configMap: {name: spike-gate, items: [{key: gate.yml, path: spike/gate.yml}]}}
+        path: /spec/template/spec/containers/0/env/-
+        value: {name: API_TOKENS_ENABLED, value: "true"}
       - op: add
         path: /spec/template/spec/volumes/0/projected/sources/-
         value: {configMap: {name: spike-spinnaker, items: [{key: spinnaker.yml, path: spike/spinnaker.yml}]}}
