@@ -1,0 +1,4 @@
+# Opt in to Gate API tokens (header X-Spinnaker-Token or Authorization: Bearer spk_...), the candidate
+# machine credential for the DeliveryPipeline controller (ADR 0011, open point 3).
+api-tokens:
+  enabled: true

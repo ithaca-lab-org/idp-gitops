@@ -1,0 +1,38 @@
+# The only namespace the spike's Kubernetes account may touch, and the least-privilege Role for it.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: spike-app
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: spinnaker-deployer
+  namespace: spike-app
+rules:
+  - apiGroups: [apps]
+    resources: [deployments]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [apps]
+    resources: [replicasets]
+    verbs: [get, list, watch]
+  - apiGroups: [""]
+    resources: [services]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [""]
+    resources: [pods, events]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: spinnaker-deployer
+  namespace: spike-app
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: spinnaker-deployer
+subjects:
+  - kind: ServiceAccount
+    name: clouddriver
+    namespace: spinnaker

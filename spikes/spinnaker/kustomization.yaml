@@ -1,0 +1,77 @@
+# THROWAWAY SPIKE (ADR 0011 in idp-infra). Not part of the app-of-apps: nothing under spikes/ is synced
+# by the root Application. See README.md for how a human applies it and tears it down.
+# Upstream spinnaker-kustomize at a pinned release, plus our overrides:
+#   - images pinned to the release tag (upstream defaults to main-latest)
+#   - upstream's cluster-admin binding for Clouddriver removed (the point of the spike)
+#   - Igor, Fiat, Keel, Kayenta off; one Kubernetes account limited to namespace spike-app
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: spinnaker
+resources:
+  - https://github.com/spinnaker/spinnaker.git//spinnaker-kustomize/base?ref=spinnaker-release-2026.4.1
+components:
+  - https://github.com/spinnaker/spinnaker.git//spinnaker-kustomize/components/mysql?ref=spinnaker-release-2026.4.1
+  - https://github.com/spinnaker/spinnaker.git//spinnaker-kustomize/components/redis?ref=spinnaker-release-2026.4.1
+  - https://github.com/spinnaker/spinnaker.git//spinnaker-kustomize/overlays/config?ref=spinnaker-release-2026.4.1
+images:
+  - {name: ghcr.io/spinnaker/clouddriver, newTag: 2026.4.1}
+  - {name: ghcr.io/spinnaker/deck, newTag: 2026.4.1}
+  - {name: ghcr.io/spinnaker/echo, newTag: 2026.4.1}
+  - {name: ghcr.io/spinnaker/fiat, newTag: 2026.4.1}
+  - {name: ghcr.io/spinnaker/front50, newTag: 2026.4.1}
+  - {name: ghcr.io/spinnaker/gate, newTag: 2026.4.1}
+  - {name: ghcr.io/spinnaker/igor, newTag: 2026.4.1}
+  - {name: ghcr.io/spinnaker/kayenta, newTag: 2026.4.1}
+  - {name: ghcr.io/spinnaker/keel, newTag: 2026.4.1}
+  - {name: ghcr.io/spinnaker/orca, newTag: 2026.4.1}
+  - {name: ghcr.io/spinnaker/rosco, newTag: 2026.4.1}
+configMapGenerator:
+  - name: spike-clouddriver
+    files: [clouddriver.yml=config/clouddriver.yml]
+  - name: spike-gate
+    files: [gate.yml=config/gate.yml]
+  - name: spike-front50
+    files: [front50.yml=config/front50.yml]
+  - name: spike-spinnaker
+    files: [spinnaker.yml=config/spinnaker.yml]
+patches:
+  # Upstream binds Clouddriver to cluster-admin. Remove it: access comes from the Role in spike-app.yaml.
+  - patch: |-
+      $patch: delete
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: ClusterRoleBinding
+      metadata:
+        name: spinnaker-clouddriver-cluster-admin
+  # Mount our config in the subdirectory `spike/` (loaded through spring.config.import, as upstream does for mysql/).
+  - target: {group: apps, version: v1, kind: Deployment, name: clouddriver}
+    patch: |-
+      - op: add
+        path: /spec/template/spec/volumes/0/projected/sources/-
+        value: {configMap: {name: spike-clouddriver, items: [{key: clouddriver.yml, path: spike/clouddriver.yml}]}}
+      - op: add
+        path: /spec/template/spec/volumes/0/projected/sources/-
+        value: {configMap: {name: spike-spinnaker, items: [{key: spinnaker.yml, path: spike/spinnaker.yml}]}}
+  - target: {group: apps, version: v1, kind: Deployment, name: gate}
+    patch: |-
+      - op: add
+        path: /spec/template/spec/volumes/0/projected/sources/-
+        value: {configMap: {name: spike-gate, items: [{key: gate.yml, path: spike/gate.yml}]}}
+      - op: add
+        path: /spec/template/spec/volumes/0/projected/sources/-
+        value: {configMap: {name: spike-spinnaker, items: [{key: spinnaker.yml, path: spike/spinnaker.yml}]}}
+  - target: {group: apps, version: v1, kind: Deployment, name: front50}
+    patch: |-
+      - op: add
+        path: /spec/template/spec/volumes/0/projected/sources/-
+        value: {configMap: {name: spike-front50, items: [{key: front50.yml, path: spike/front50.yml}]}}
+  - target: {group: apps, version: v1, kind: Deployment, name: orca}
+    patch: |-
+      - op: add
+        path: /spec/template/spec/volumes/0/projected/sources/-
+        value: {configMap: {name: spike-spinnaker, items: [{key: spinnaker.yml, path: spike/spinnaker.yml}]}}
+  # Services the spike does not need.
+  - target: {group: apps, version: v1, kind: Deployment, name: "igor|keel|kayenta|fiat"}
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 0

@@ -1,0 +1,28 @@
+# Applied BY HAND by the human for the spike (kubectl apply -f), never synced by the root app.
+# Delete it (and make down) when the spike is over.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: spinnaker-spike
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: https://github.com/ithaca-lab-org/idp-gitops.git
+      targetRevision: spike/spinnaker-minimal
+      path: spikes/spinnaker
+    - repoURL: https://github.com/ithaca-lab-org/idp-gitops.git
+      targetRevision: spike/spinnaker-minimal
+      path: spikes/spinnaker-app
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: spinnaker
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff: {duration: 30s, factor: 2, maxDuration: 5m}
