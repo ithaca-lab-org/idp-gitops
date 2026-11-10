@@ -55,6 +55,10 @@ patches:
       - op: add
         path: /spec/template/spec/containers/0/env/-
         value: {name: API_TOKENS_ENABLED, value: "true"}
+      # Fiat is off, so nobody is a Fiat admin: allow the basic-auth user's role to mint tokens.
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value: {name: API_TOKENS_ALLOWEDMINTINGROLES_0, value: admin}
       - op: add
         path: /spec/template/spec/volumes/0/projected/sources/-
         value: {configMap: {name: spike-spinnaker, items: [{key: spinnaker.yml, path: spike/spinnaker.yml}]}}
