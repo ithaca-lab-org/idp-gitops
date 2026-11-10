@@ -2,6 +2,7 @@
 # Keys follow the Halyard-era schema; if Clouddriver 2026.4.1 rejects them, the log says which key.
 kubernetes:
   enabled: true
+  primaryAccount: spike
   accounts:
     - name: spike
       providerVersion: V2

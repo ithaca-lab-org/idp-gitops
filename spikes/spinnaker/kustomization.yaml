@@ -26,7 +26,10 @@ images:
   - {name: ghcr.io/spinnaker/orca, newTag: 2026.4.1}
   - {name: ghcr.io/spinnaker/rosco, newTag: 2026.4.1}
 configMapGenerator:
-  - name: spike-clouddriver
+  # Replaces the key clouddriver.yml of upstream's `clouddriver` ConfigMap (its account `managing` lists ALL
+  # namespaces and so needs cluster-wide rights). A list in a later Spring source would not merge with it.
+  - name: clouddriver
+    behavior: merge
     files: [clouddriver.yml=config/clouddriver.yml]
   - name: spike-gate
     files: [gate.yml=config/gate.yml]
@@ -45,9 +48,6 @@ patches:
   # Mount our config in the subdirectory `spike/` (loaded through spring.config.import, as upstream does for mysql/).
   - target: {group: apps, version: v1, kind: Deployment, name: clouddriver}
     patch: |-
-      - op: add
-        path: /spec/template/spec/volumes/0/projected/sources/-
-        value: {configMap: {name: spike-clouddriver, items: [{key: clouddriver.yml, path: spike/clouddriver.yml}]}}
       - op: add
         path: /spec/template/spec/volumes/0/projected/sources/-
         value: {configMap: {name: spike-spinnaker, items: [{key: spinnaker.yml, path: spike/spinnaker.yml}]}}
