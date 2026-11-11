@@ -9,6 +9,7 @@ kind: Kustomization
 namespace: spinnaker
 resources:
   - https://github.com/spinnaker/spinnaker.git//spinnaker-kustomize/base?ref=spinnaker-release-2026.4.1
+  - networkpolicy.yaml
 components:
   - https://github.com/spinnaker/spinnaker.git//spinnaker-kustomize/components/mysql?ref=spinnaker-release-2026.4.1
   - https://github.com/spinnaker/spinnaker.git//spinnaker-kustomize/components/redis?ref=spinnaker-release-2026.4.1
@@ -49,16 +50,20 @@ patches:
       - op: add
         path: /spec/template/spec/volumes/0/projected/sources/-
         value: {configMap: {name: spike-spinnaker, items: [{key: spinnaker.yml, path: spike/spinnaker.yml}]}}
+      # Spike 2: reload Kubernetes accounts stored through POST /credentials without a restart.
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value: {name: CREDENTIALS_POLLER_ENABLED, value: "true"}
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value: {name: CREDENTIALS_POLLER_TYPES_KUBERNETES_RELOADFREQUENCYMS, value: "30000"}
   - target: {group: apps, version: v1, kind: Deployment, name: gate}
     patch: |-
-      # Env beats upstream's gate-local.yml, which sets api-tokens.enabled: false (a file in spike/ loses to it).
+      # Spike 2: no login at all. Gate is protected by the network (networkpolicy.yaml), not by users:
+      # tenants use the portal, only the controller calls Gate. Env beats upstream's gate-local.yml.
       - op: add
         path: /spec/template/spec/containers/0/env/-
-        value: {name: API_TOKENS_ENABLED, value: "true"}
-      # Fiat is off, so nobody is a Fiat admin: allow the basic-auth user's role to mint tokens.
-      - op: add
-        path: /spec/template/spec/containers/0/env/-
-        value: {name: API_TOKENS_ALLOWEDMINTINGROLES_0, value: admin}
+        value: {name: SECURITY_BASICFORM_ENABLED, value: "false"}
       - op: add
         path: /spec/template/spec/volumes/0/projected/sources/-
         value: {configMap: {name: spike-spinnaker, items: [{key: spinnaker.yml, path: spike/spinnaker.yml}]}}

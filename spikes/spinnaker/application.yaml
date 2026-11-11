@@ -9,10 +9,10 @@ spec:
   project: default
   sources:
     - repoURL: https://github.com/ithaca-lab-org/idp-gitops.git
-      targetRevision: spike/spinnaker-minimal
+      targetRevision: spike/spinnaker-isolation
       path: spikes/spinnaker
     - repoURL: https://github.com/ithaca-lab-org/idp-gitops.git
-      targetRevision: spike/spinnaker-minimal
+      targetRevision: spike/spinnaker-isolation
       path: spikes/spinnaker-app
   destination:
     server: https://kubernetes.default.svc

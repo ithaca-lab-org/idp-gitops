@@ -1,36 +1,38 @@
-# Spinnaker spike (throwaway, ADR 0011)
+# Spinnaker spike 2 (throwaway, ADR 0011): isolation by network, runtime accounts
 
-Goal: answer the open points of `idp-infra/docs/adr/0011-tenant-delivery-with-spinnaker.md` with numbers. Nothing here is synced by the root app: you apply one Application by hand and delete it afterwards. The agent does not run any of this.
+Builds on spike 1 (results in `idp-infra/docs/adr/0011-tenant-delivery-with-spinnaker.md`, "Spike results"). Branch `spike/spinnaker-isolation`. Nothing here is synced by the root app: the human applies one Application by hand and deletes it afterwards.
 
-What is installed: upstream `spinnaker-kustomize` at release `spinnaker-release-2026.4.1` (images pinned to tag `2026.4.1`), in namespace `spinnaker`, with MySQL and Redis in the cluster. Igor, Fiat, Keel and Kayenta are scaled to 0. Upstream's `cluster-admin` binding for Clouddriver is removed; its only access is the Role in `spikes/spinnaker-app` (namespace `spike-app`: deployments, services; read on replicasets, pods, events).
+Questions this spike answers (user decision 2026-11-11: Gate is protected by the network, no Fiat, no login):
+1. Does a NetworkPolicy keep every caller except the controller away from Gate and Clouddriver (which are unauthenticated here)?
+2. Does Gate work for the controller with no login (`SECURITY_BASICFORM_ENABLED=false`)?
+3. Can Clouddriver Kubernetes accounts be added, updated and deleted at runtime (`POST/PUT/DELETE /credentials`, poller on) without restarting Clouddriver, so a new tenant namespace needs no config change?
 
-**Known spike-only weaknesses (never promote as is):** MySQL password `testing123` and Gate's `admin` password are upstream defaults (public); no TLS; no ingress (reach Deck and Gate with `kubectl port-forward` only); images by tag, not digest.
+What differs from spike 1: Gate login off; Clouddriver credentials poller on (30 s); `networkpolicy.yaml` (default deny ingress in `spinnaker`, allow from its own pods, allow only `spike-controller/app=spike-controller` to Gate 8084 and Clouddriver 7002); namespace `spike-app-b` with the deployer Role; stand-in pods `controller-sim` (namespace `spike-controller`) and `intruder` (namespace `spike-app`).
 
-## Run (you)
+**Spike-only weaknesses (never promote as is):** no authentication at all on Gate and Clouddriver; label-based NetworkPolicy (production would pin the controller by mesh identity, ambient AuthorizationPolicy on its SPIFFE ID); MySQL password and images as in spike 1; no ingress (port-forward only).
 
-1. Do not merge this PR. Run `make up` as usual (Argo CD reads the branch `spike/spinnaker-minimal` directly once the Application exists).
-2. `kubectl apply -f spikes/spinnaker/application.yaml` (from a checkout of the branch), then watch: `kubectl -n spinnaker get pods -w`.
-3. Fill in the table below and paste it back. Then `kubectl delete -f spikes/spinnaker/application.yaml`, `make down`.
+## Run
 
-## Measure and check
+1. `make up` (idp-infra, main), then from a checkout of this branch: `kubectl apply -f spikes/spinnaker/application.yaml`, `kubectl -n spinnaker get pods -w`.
+2. Run the checks below (the agent can run them if you ask), paste the results, then `kubectl delete -f spikes/spinnaker/application.yaml`, `make down` (it prints orphaned PVC disks; `make pv-disk-cleanup DELETE=1 MAX=n` removes them).
 
-| # | What | How | Record |
+Shorthand: `GATE=http://gate.spinnaker:8084/api/v1`, `CD=http://clouddriver.spinnaker:7002`, `CTRL="kubectl -n spike-controller exec controller-sim --"`.
+
+## Checks
+
+| # | What | How | Expect |
 |---|---|---|---|
-| 1 | Nodes before and after | `kubectl get nodes` (did the autoscaler add one?) | count, time to add |
-| 2 | Time from apply to all pods Ready | `kubectl -n spinnaker get pods` | minutes; which pods restart |
-| 3 | Real memory | `kubectl top pods -n spinnaker` and `kubectl top nodes` once idle | per pod MiB, node % |
-| 4 | Pods that fail and why | `kubectl -n spinnaker logs deploy/<svc> --tail=50` | first error line |
-| 5 | Config keys accepted | clouddriver log: account `spike` loaded? gate log: api-tokens on? front50: service account `idp-controller`? | yes/no each |
-| 6 | Restricted Role | `kubectl auth can-i create deployments -n spike-app --as=system:serviceaccount:spinnaker:clouddriver` must be yes; same for `-n default`, `create httproutes.gateway.networking.k8s.io -n spike-app`, `get nodes`, `create secrets -n spike-app` must all be no | yes/no each |
-| 7 | Clouddriver without cluster-admin | clouddriver log: any `forbidden` lines (cluster-scoped reads such as CRDs or namespaces)? | the exact verbs and resources |
-| 8 | Rosco Kustomize version | `kubectl -n spinnaker exec deploy/rosco -- kustomize version` | version |
-| 9 | Gate machine auth | port-forward `svc/gate 8084`; log in with the basic `admin` account; mint an API token for `idp-controller` (Gate `POST /api-tokens`, see the comments in upstream `overlays/config/files/gate-local.yml`); call `GET /applications` with the header `X-Spinnaker-Token` | works / error |
-| 10 | Pipeline end to end | In Deck (port-forward `svc/deck 9000`): create application `spikeapp`; pipeline stage 1 Bake (Manifest) renderer `KUSTOMIZE`, input artifact type `git/repo`, repo `https://github.com/ithaca-lab-org/idp-gitops`, branch `spike/spinnaker-minimal`, context dir `spikes/sample-app/deploy/base`, output name `base`; stage 2 Deploy (Manifest) from the baked artifact, account `spike`, namespace `spike-app`. Run it. | bake ok? deploy ok? `kubectl -n spike-app get deploy,svc` |
-| 11 | Isolation | Edit the Deploy stage to target namespace `default` or a `Role` object: it must fail | failed how |
-| 12 | Echo/Pub/Sub trigger (optional, skip if time is short) | only if you want to test point 4 of the ADR | notes |
+| 1 | Pods Ready, Gate starts with login off | `kubectl -n spinnaker get pods`; gate log has no basic-auth setup errors | all Ready |
+| 2 | Controller reaches Gate with no credentials | `$CTRL curl -s -m 8 -o /dev/null -w '%{http_code}' $GATE/credentials` | 200 |
+| 3 | Controller reaches Clouddriver | `$CTRL curl -s -m 8 -o /dev/null -w '%{http_code}' $CD/health` | 200 |
+| 4 | Intruder is blocked | same two calls from `kubectl -n spike-app exec intruder --` | timeout (000) |
+| 5 | Intruder blocked from MySQL and Redis | `curl -m 5 mysql.spinnaker:3306`, `redis.spinnaker:6379` from `intruder` | timeout |
+| 6 | Policy really enforced | repeat 4 after deleting nothing: if 4 returns 200, record it (Dataplane V2 should enforce) | blocked |
+| 7 | Add an account at runtime | `$CTRL curl -s -X POST -H 'Content-Type: application/json' -d @- $CD/credentials < pipelines/account-spike-b.json` (pipe the file in), then poll `$GATE/credentials` until `spike-b` appears | seconds until it appears; Clouddriver pod unchanged (`kubectl -n spinnaker get pod -l app.kubernetes.io/name=clouddriver`) |
+| 8 | Deploy through the runtime account | create app `spikeapp`, pipeline from `pipelines/deploy.json` with `__NAME__=b`, `__ACCOUNT__=spike-b`, `__NAMESPACE__=spike-app-b`, run it | deploy succeeds, `spike-web` in `spike-app-b` |
+| 9 | Update the account | `PUT $CD/credentials/spike-b` with `pipelines/account-spike-b-updated.json` (adds `spike-app`); wait; run the pipeline with `__NAMESPACE__=spike-app` and account `spike-b` | works after the update, fails before |
+| 10 | Delete the account | `DELETE $CD/credentials/spike-b`; poll until gone; re-run the pipeline | account gone; the run fails cleanly |
+| 11 | Static account unaffected | `$GATE/credentials` still lists `spike`; spike-1 pipeline still works | yes |
+| 12 | Restart fallback (ask first) | `kubectl -n spinnaker rollout restart deploy/clouddriver`, time to Ready; do runtime accounts survive (SQL)? | seconds; survive yes/no |
 
-If a pod will not start, paste the first error and stop: the point of the spike is to learn what 2026.4.1 really needs.
-
-## Cleanup
-
-`kubectl delete -f spikes/spinnaker/application.yaml`, then `make down`. The MySQL PersistentVolumeClaim can leave a Persistent Disk behind when the cluster is destroyed: check `gcloud compute disks list --filter="name~pvc"` afterwards and delete orphans by hand (the agent does not).
+Ids and URLs in the API calls follow the Gate/Clouddriver source; if a call is rejected, record the status and body: the shape of the account JSON is the thing most likely to need a tweak.

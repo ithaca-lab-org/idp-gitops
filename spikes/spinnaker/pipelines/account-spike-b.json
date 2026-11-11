@@ -1,0 +1,16 @@
+{
+  "type": "kubernetes",
+  "name": "spike-b",
+  "providerVersion": "V2",
+  "serviceAccount": true,
+  "namespaces": [
+    "spike-app-b"
+  ],
+  "kinds": [
+    "deployments",
+    "replicaSets",
+    "pods",
+    "services"
+  ],
+  "cacheThreads": 1
+}

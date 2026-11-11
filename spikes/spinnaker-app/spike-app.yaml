@@ -36,3 +36,76 @@ subjects:
   - kind: ServiceAccount
     name: clouddriver
     namespace: spinnaker
+---
+# Spike 2: a second tenant namespace whose Kubernetes account is added at runtime (POST /credentials).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: spike-app-b
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: spinnaker-deployer
+  namespace: spike-app-b
+rules:
+  - apiGroups: [apps]
+    resources: [deployments]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [apps]
+    resources: [replicasets]
+    verbs: [get, list, watch]
+  - apiGroups: [""]
+    resources: [services]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [""]
+    resources: [pods, events]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: spinnaker-deployer
+  namespace: spike-app-b
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: spinnaker-deployer
+subjects:
+  - kind: ServiceAccount
+    name: clouddriver
+    namespace: spinnaker
+---
+# Stand-ins for callers: the allowed controller and an intruder in a tenant namespace.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: spike-controller
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: controller-sim
+  namespace: spike-controller
+  labels: {app: spike-controller}
+spec:
+  containers:
+    - name: curl
+      image: curlimages/curl:8.11.1
+      command: [sleep, "86400"]
+      resources: {requests: {cpu: 5m, memory: 16Mi}, limits: {memory: 64Mi}}
+      securityContext: {allowPrivilegeEscalation: false, runAsNonRoot: true, runAsUser: 100, readOnlyRootFilesystem: true}
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: intruder
+  namespace: spike-app
+  labels: {app: intruder}
+spec:
+  containers:
+    - name: curl
+      image: curlimages/curl:8.11.1
+      command: [sleep, "86400"]
+      resources: {requests: {cpu: 5m, memory: 16Mi}, limits: {memory: 64Mi}}
+      securityContext: {allowPrivilegeEscalation: false, runAsNonRoot: true, runAsUser: 100, readOnlyRootFilesystem: true}
