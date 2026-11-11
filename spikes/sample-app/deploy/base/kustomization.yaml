@@ -1,0 +1,6 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# Sample app for the Spinnaker spike: Rosco bakes this from a git/repo artifact. Not synced by Argo CD.
+resources:
+  - deployment.yaml
+  - service.yaml

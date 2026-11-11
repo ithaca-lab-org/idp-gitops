@@ -1,0 +1,18 @@
+# One Kubernetes account that sees ONLY namespace spike-app, using Clouddriver's own ServiceAccount.
+# Keys follow the Halyard-era schema; if Clouddriver 2026.4.1 rejects them, the log says which key.
+kubernetes:
+  enabled: true
+  primaryAccount: spike
+  accounts:
+    - name: spike
+      providerVersion: V2
+      serviceAccount: true
+      namespaces: [spike-app]
+      kinds: [deployments, replicaSets, pods, services]
+      cacheThreads: 1
+# Anonymous git/repo artifact account so Rosco can bake Kustomize from a public repo (no credentials).
+artifacts:
+  gitrepo:
+    enabled: true
+    accounts:
+      - name: public-git

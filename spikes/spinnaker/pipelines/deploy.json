@@ -1,0 +1,60 @@
+{
+  "application": "spikeapp",
+  "name": "deploy-__NAME__",
+  "keepWaitingPipelines": false,
+  "limitConcurrent": true,
+  "expectedArtifacts": [],
+  "triggers": [],
+  "stages": [
+    {
+      "refId": "1",
+      "requisiteStageRefIds": [],
+      "type": "bakeManifest",
+      "name": "Bake kustomize",
+      "templateRenderer": "KUSTOMIZE",
+      "kustomizeFilePath": "spikes/sample-app/deploy/base/kustomization.yaml",
+      "namespace": "__NAMESPACE__",
+      "outputName": "spike-web",
+      "expectedArtifacts": [
+        {
+          "id": "baked-spike-web",
+          "displayName": "baked-spike-web",
+          "usePriorArtifact": false,
+          "useDefaultArtifact": false,
+          "matchArtifact": {
+            "type": "embedded/base64",
+            "name": "spike-web",
+            "artifactAccount": "embedded-artifact"
+          }
+        }
+      ],
+      "inputArtifact": {
+        "account": "public-git",
+        "artifact": {
+          "type": "git/repo",
+          "artifactAccount": "public-git",
+          "reference": "https://github.com/ithaca-lab-org/idp-gitops",
+          "version": "spike/spinnaker-isolation"
+        }
+      }
+    },
+    {
+      "refId": "2",
+      "requisiteStageRefIds": [
+        "1"
+      ],
+      "type": "deployManifest",
+      "name": "Deploy",
+      "account": "__ACCOUNT__",
+      "cloudProvider": "kubernetes",
+      "moniker": {
+        "app": "spikeapp"
+      },
+      "source": "artifact",
+      "manifestArtifactAccount": "embedded-artifact",
+      "manifestArtifactId": "baked-spike-web",
+      "namespaceOverride": "__NAMESPACE__",
+      "skipExpressionEvaluation": false
+    }
+  ]
+}

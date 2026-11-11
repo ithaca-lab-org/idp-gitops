@@ -1,0 +1,40 @@
+# Spike 2: Gate and Clouddriver have no authentication (Fiat off, basic login off), so the NETWORK is the only
+# control. Ingress into the spinnaker namespace is denied except from its own pods and from the controller
+# stand-in (namespace spike-controller, pod label app=spike-controller). kubectl port-forward is not affected.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-same-namespace
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: {}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-controller-to-gate-and-clouddriver
+spec:
+  podSelector:
+    matchExpressions:
+      - {key: app.kubernetes.io/name, operator: In, values: [gate, clouddriver]}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: spike-controller}
+          podSelector:
+            matchLabels: {app: spike-controller}
+      ports:
+        - {protocol: TCP, port: 8084}
+        - {protocol: TCP, port: 7002}

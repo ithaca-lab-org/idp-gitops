@@ -1,0 +1,5 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# Separate from ../spinnaker because that one sets namespace: spinnaker on everything.
+resources:
+  - spike-app.yaml

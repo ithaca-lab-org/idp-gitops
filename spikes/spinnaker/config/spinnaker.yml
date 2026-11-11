@@ -1,0 +1,5 @@
+services:
+  igor:
+    enabled: false
+  fiat:
+    enabled: false

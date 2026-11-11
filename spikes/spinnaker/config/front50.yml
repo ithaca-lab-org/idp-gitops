@@ -1,0 +1,4 @@
+# Service account eligible for API tokens (Gate POST /api-tokens). Fiat is off in the spike, so no roles.
+service-accounts:
+  - name: idp-controller
+    memberOf: []
