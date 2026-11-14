@@ -1,0 +1,25 @@
+# Replaces upstream's clouddriver.yml, whose account `managing` has no namespace list (it needs cluster-wide
+# list rights and logs forbidden errors without them). ONE Kubernetes account `demo`, limited to namespace `demo`
+# and to the four kinds Spinnaker deploys, using Clouddriver's own ServiceAccount; deploy rights are the
+# RoleBinding to idp-spinnaker-deployer that idp-operator creates in each tenant namespace.
+# The cluster is rebuilt often and tenant namespaces are ordered AFTER make up: checkPermissionsOnStartup is off so
+# a missing namespace does not drop the account, and Clouddriver must be restarted once after the namespace
+# exists (kubectl -n spinnaker rollout restart deploy/clouddriver, about 45 s). Spike 2 showed that account
+# changes apply only after a restart; runtime reload by the poller did not work.
+kubernetes:
+  enabled: true
+  primaryAccount: demo
+  accounts:
+    - name: demo
+      providerVersion: V2
+      serviceAccount: true
+      namespaces: [demo]
+      kinds: [deployments, replicaSets, pods, services]
+      checkPermissionsOnStartup: false
+      cacheThreads: 1
+# Anonymous git/repo artifact account so Rosco can bake Kustomize from a public repo (no credentials).
+artifacts:
+  gitrepo:
+    enabled: true
+    accounts:
+      - name: public-git

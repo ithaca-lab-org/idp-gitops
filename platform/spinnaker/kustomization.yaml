@@ -1,0 +1,81 @@
+# Spinnaker 2026.4.1 for tenant delivery (idp-infra ADR 0011, docs/order-04-first-app.md). Upstream
+# spinnaker-kustomize at a pinned release, plus our overrides. Proven by two throwaway spikes (ADR 0011,
+# "Spike results" and "Spike 2 results"):
+#   - images pinned to the release tag (upstream defaults to main-latest even at the release tag)
+#   - upstream's cluster-admin binding for Clouddriver removed; deploy rights come per tenant namespace from a
+#     RoleBinding the idp-operator creates to the ClusterRole idp-spinnaker-deployer (clusterrole.yaml)
+#   - Gate login off and Fiat off: Gate and Clouddriver have NO authentication, the NETWORK is the control
+#     (networkpolicy.yaml); tenants use the portal, only platform admins reach Deck over Tailscale
+#   - Igor, Fiat, Keel and Kayenta scaled to 0; MySQL and Redis in the cluster (upstream test password, the
+#     databases are reachable only from the namespace's own pods)
+#   - one Kubernetes account `demo` with an explicit namespace list (a restart of Clouddriver is needed after the
+#     namespace is ordered, see config/clouddriver.yml)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: spinnaker
+resources:
+  - https://github.com/spinnaker/spinnaker.git//spinnaker-kustomize/base?ref=spinnaker-release-2026.4.1
+  - networkpolicy.yaml
+  - clusterrole.yaml
+components:
+  - https://github.com/spinnaker/spinnaker.git//spinnaker-kustomize/components/mysql?ref=spinnaker-release-2026.4.1
+  - https://github.com/spinnaker/spinnaker.git//spinnaker-kustomize/components/redis?ref=spinnaker-release-2026.4.1
+  - https://github.com/spinnaker/spinnaker.git//spinnaker-kustomize/overlays/config?ref=spinnaker-release-2026.4.1
+images:
+  - {name: ghcr.io/spinnaker/clouddriver, newTag: 2026.4.1}
+  - {name: ghcr.io/spinnaker/deck, newTag: 2026.4.1}
+  - {name: ghcr.io/spinnaker/echo, newTag: 2026.4.1}
+  - {name: ghcr.io/spinnaker/fiat, newTag: 2026.4.1}
+  - {name: ghcr.io/spinnaker/front50, newTag: 2026.4.1}
+  - {name: ghcr.io/spinnaker/gate, newTag: 2026.4.1}
+  - {name: ghcr.io/spinnaker/igor, newTag: 2026.4.1}
+  - {name: ghcr.io/spinnaker/kayenta, newTag: 2026.4.1}
+  - {name: ghcr.io/spinnaker/keel, newTag: 2026.4.1}
+  - {name: ghcr.io/spinnaker/orca, newTag: 2026.4.1}
+  - {name: ghcr.io/spinnaker/rosco, newTag: 2026.4.1}
+configMapGenerator:
+  # Replaces the key of upstream's ConfigMaps (a list or a file in a later Spring source loses to upstream's own).
+  - name: clouddriver
+    behavior: merge
+    files: [clouddriver.yml=config/clouddriver.yml]
+  - name: spinnaker-extra
+    files: [spinnaker.yml=config/spinnaker.yml]
+patches:
+  # Deck: upstream's overlays/config component sets authEnabled = true in the same key, and components win over our
+  # generators, so a patch (applied last) is the only way to replace it. Gate has no login here (the network is the
+  # control), so Deck must not try to authenticate.
+  - patch: |-
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: deck
+      data:
+        settings-local.js: |
+          window.spinnakerSettings.feature.kubernetesRawResources = false;
+          window.spinnakerSettings.feature.kustomizeEnabled = true;
+          window.spinnakerSettings.feature.artifactsRewrite = true;
+          window.spinnakerSettings.feature.functions = false;
+          window.spinnakerSettings.kubernetesAdHocInfraWritesEnabled = true;
+          window.spinnakerSettings.authEnabled = false;
+  - patch: |-
+      $patch: delete
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: ClusterRoleBinding
+      metadata:
+        name: spinnaker-clouddriver-cluster-admin
+  - target: {group: apps, version: v1, kind: Deployment, name: gate}
+    patch: |-
+      # Env beats upstream's gate-local.yml (which enables a basic login with a public default password).
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value: {name: SECURITY_BASICFORM_ENABLED, value: "false"}
+  - target: {group: apps, version: v1, kind: Deployment, name: "clouddriver|gate|orca"}
+    patch: |-
+      - op: add
+        path: /spec/template/spec/volumes/0/projected/sources/-
+        value: {configMap: {name: spinnaker-extra, items: [{key: spinnaker.yml, path: extra/spinnaker.yml}]}}
+  - target: {group: apps, version: v1, kind: Deployment, name: "igor|keel|kayenta|fiat"}
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 0

@@ -1,0 +1,45 @@
+# Gate and Clouddriver have no authentication: only these callers may reach them. kubectl port-forward is not
+# affected. Allowed in: the namespace's own pods and the Tailscale proxy pod of the spinnaker-admin Ingress (Deck
+# and Gate, for platform admins on the tailnet). The future DeliveryPipeline controller gets its own allow rule when
+# it exists, pinned by mesh identity rather than pod labels (ADR 0011).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-same-namespace
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: {}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-tailscale-proxy-to-deck-and-gate
+spec:
+  podSelector:
+    matchExpressions:
+      - {key: app.kubernetes.io/name, operator: In, values: [deck, gate]}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: tailscale}
+          podSelector:
+            matchLabels:
+              tailscale.com/managed: "true"
+              tailscale.com/parent-resource: spinnaker-admin
+              tailscale.com/parent-resource-ns: spinnaker
+              tailscale.com/parent-resource-type: ingress
+      ports:
+        - {protocol: TCP, port: 9000}
+        - {protocol: TCP, port: 8084}

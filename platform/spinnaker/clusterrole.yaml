@@ -1,0 +1,21 @@
+# What Clouddriver may do in a tenant namespace. Bound per namespace by the RoleBinding `spinnaker-deployer` that
+# idp-operator creates (SPINNAKER_DEPLOYER_ENABLED); nothing here is cluster-wide. Spinnaker deploys only
+# Deployments and Services: HTTPRoute, ServiceAccount, AuthorizationPolicy, NetworkPolicy, RBAC and Secrets stay with
+# the platform (ADR 0011). The operator needs `bind` on exactly this name.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: idp-spinnaker-deployer
+rules:
+  - apiGroups: [apps]
+    resources: [deployments]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [apps]
+    resources: [replicasets]
+    verbs: [get, list, watch]
+  - apiGroups: [""]
+    resources: [services]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [""]
+    resources: [pods, events]
+    verbs: [get, list, watch]
