@@ -1,4 +1,4 @@
-# Spinnaker 2026.4.1 for tenant delivery (idp-infra ADR 0011, docs/order-04-first-app.md). Upstream
+# Spinnaker 2026.4.1 for tenant delivery (remote base pinned by COMMIT SHA of tag spinnaker-release-2026.4.1, images by digest of tag 2026.4.1: tags are mutable) (idp-infra ADR 0011, docs/order-04-first-app.md). Upstream
 # spinnaker-kustomize at a pinned release, plus our overrides. Proven by two throwaway spikes (ADR 0011,
 # "Spike results" and "Spike 2 results"):
 #   - images pinned to the release tag (upstream defaults to main-latest even at the release tag)
@@ -14,25 +14,26 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: spinnaker
 resources:
-  - https://github.com/spinnaker/spinnaker.git//spinnaker-kustomize/base?ref=spinnaker-release-2026.4.1
+  - https://github.com/spinnaker/spinnaker.git//spinnaker-kustomize/base?ref=1b3ed435fe5341b41dcbbdce999cb771145166a8
   - networkpolicy.yaml
   - clusterrole.yaml
+  - admission-policy.yaml
 components:
-  - https://github.com/spinnaker/spinnaker.git//spinnaker-kustomize/components/mysql?ref=spinnaker-release-2026.4.1
-  - https://github.com/spinnaker/spinnaker.git//spinnaker-kustomize/components/redis?ref=spinnaker-release-2026.4.1
-  - https://github.com/spinnaker/spinnaker.git//spinnaker-kustomize/overlays/config?ref=spinnaker-release-2026.4.1
+  - https://github.com/spinnaker/spinnaker.git//spinnaker-kustomize/components/mysql?ref=1b3ed435fe5341b41dcbbdce999cb771145166a8
+  - https://github.com/spinnaker/spinnaker.git//spinnaker-kustomize/components/redis?ref=1b3ed435fe5341b41dcbbdce999cb771145166a8
+  - https://github.com/spinnaker/spinnaker.git//spinnaker-kustomize/overlays/config?ref=1b3ed435fe5341b41dcbbdce999cb771145166a8
 images:
-  - {name: ghcr.io/spinnaker/clouddriver, newTag: 2026.4.1}
-  - {name: ghcr.io/spinnaker/deck, newTag: 2026.4.1}
-  - {name: ghcr.io/spinnaker/echo, newTag: 2026.4.1}
-  - {name: ghcr.io/spinnaker/fiat, newTag: 2026.4.1}
-  - {name: ghcr.io/spinnaker/front50, newTag: 2026.4.1}
-  - {name: ghcr.io/spinnaker/gate, newTag: 2026.4.1}
-  - {name: ghcr.io/spinnaker/igor, newTag: 2026.4.1}
-  - {name: ghcr.io/spinnaker/kayenta, newTag: 2026.4.1}
-  - {name: ghcr.io/spinnaker/keel, newTag: 2026.4.1}
-  - {name: ghcr.io/spinnaker/orca, newTag: 2026.4.1}
-  - {name: ghcr.io/spinnaker/rosco, newTag: 2026.4.1}
+  - {name: ghcr.io/spinnaker/clouddriver, digest: sha256:e0d6a81253cb07cdb5deee2d909f862ddfaa1407acf75f28846e14a5e66dbf10}
+  - {name: ghcr.io/spinnaker/deck, digest: sha256:f48f27dcf0bc3999b02117ddf54a71ce9e751c8a4c3373ae64efeb4de94369ce}
+  - {name: ghcr.io/spinnaker/echo, digest: sha256:c7f1b313af136615b3cb17291001f40fc479f6ec7aec8f5de1498caed80f1e7d}
+  - {name: ghcr.io/spinnaker/fiat, digest: sha256:3ef202a9d99d2b9ddbbde6154abcc4ed01acdc10408c4b6026186c1ffab931f3}
+  - {name: ghcr.io/spinnaker/front50, digest: sha256:3095f151cc5bbaf6121cd8eff32af772e06e7c68aedf9efdd624b0250fb16cd0}
+  - {name: ghcr.io/spinnaker/gate, digest: sha256:44d7e9dd052f701925a1ae095a341d96f1b5c084714366dfeadcb44ec9f57ddb}
+  - {name: ghcr.io/spinnaker/igor, digest: sha256:5a2428e9e4ed0e2a6a032c1cdf6ebabd27ad2c119950bc7a47b795a8d46782e5}
+  - {name: ghcr.io/spinnaker/kayenta, digest: sha256:17cc007578ac51473cc2d9adfd205f6996b632ec50c2ce4c122f3a6061955a3b}
+  - {name: ghcr.io/spinnaker/keel, digest: sha256:868c860f050eefdf47ac10b375c793b68848a0b7815894ac5f7f5ba4445e09e3}
+  - {name: ghcr.io/spinnaker/orca, digest: sha256:f97c0d474dc2cf584368fbbfcdc7da2b5aaf2d259f620af57f1a541baf260294}
+  - {name: ghcr.io/spinnaker/rosco, digest: sha256:f885597481f94c02c4bd913bd08d743da89236a4496baedaadf2f83f6cc898c8}
 configMapGenerator:
   # Replaces the key of upstream's ConfigMaps (a list or a file in a later Spring source loses to upstream's own).
   - name: clouddriver
@@ -41,6 +42,15 @@ configMapGenerator:
   - name: spinnaker-extra
     files: [spinnaker.yml=config/spinnaker.yml]
 patches:
+  # The namespace comes from upstream with no Pod Security labels.
+  - patch: |-
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: spinnaker
+        labels:
+          pod-security.kubernetes.io/enforce: baseline
+          pod-security.kubernetes.io/warn: restricted
   # Deck: upstream's overlays/config component sets authEnabled = true in the same key, and components win over our
   # generators, so a patch (applied last) is the only way to replace it. Gate has no login here (the network is the
   # control), so Deck must not try to authenticate.
@@ -57,6 +67,9 @@ patches:
           window.spinnakerSettings.feature.functions = false;
           window.spinnakerSettings.kubernetesAdHocInfraWritesEnabled = true;
           window.spinnakerSettings.authEnabled = false;
+          window.spinnakerSettings.feature.fiatEnabled = false;
+          // upstream settings.js hardcodes http://example.com/api/v1; Gate is served on the same host under /api/v1
+          window.spinnakerSettings.gateUrl = window.location.origin + '/api/v1';
   - patch: |-
       $patch: delete
       apiVersion: rbac.authorization.k8s.io/v1
@@ -69,7 +82,7 @@ patches:
       - op: add
         path: /spec/template/spec/containers/0/env/-
         value: {name: SECURITY_BASICFORM_ENABLED, value: "false"}
-  - target: {group: apps, version: v1, kind: Deployment, name: "clouddriver|gate|orca"}
+  - target: {group: apps, version: v1, kind: Deployment, name: "clouddriver|gate|orca|echo|front50|rosco"}
     patch: |-
       - op: add
         path: /spec/template/spec/volumes/0/projected/sources/-

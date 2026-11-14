@@ -19,3 +19,22 @@ if [ "$dir" != "/home/kubernetes/bin" ]; then
   exit 1
 fi
 echo "render-check ok: istio-cni bin dir is $dir"
+
+# Spinnaker overlay (platform/spinnaker): the remote base is upstream's, so assert what must never appear. Opus review
+# of idp-gitops #53: no RoleBinding or ClusterRoleBinding at all (deploy rights come from idp-operator, per tenant
+# namespace), and no cluster-scoped kind except the ones we ship on purpose.
+if command -v kubectl >/dev/null 2>&1; then
+  spk="$(kubectl kustomize platform/spinnaker)"
+  if grep -qE '^kind: (Cluster)?RoleBinding$' <<<"$spk"; then
+    echo "render-check FAIL: platform/spinnaker renders a RoleBinding or ClusterRoleBinding" >&2
+    exit 1
+  fi
+  bad="$(grep -E '^kind: (ClusterRole|ClusterRoleBinding|CustomResourceDefinition|MutatingWebhookConfiguration|ValidatingWebhookConfiguration|PersistentVolume|StorageClass|APIService)$' <<<"$spk" | grep -vxE 'kind: ClusterRole' || true)"
+  if [ -n "$bad" ] || [ "$(grep -cE '^kind: ClusterRole$' <<<"$spk")" -ne 1 ] || ! grep -q '^  name: idp-spinnaker-deployer$' <<<"$spk"; then
+    echo "render-check FAIL: platform/spinnaker renders unexpected cluster-scoped objects (only ClusterRole idp-spinnaker-deployer, the Namespace and the admission policy are allowed)" >&2
+    exit 1
+  fi
+  echo "render-check ok: platform/spinnaker has no RoleBinding and only the expected cluster-scoped objects"
+else
+  echo "render-check: kubectl not found, skipping the platform/spinnaker check"
+fi

@@ -1,0 +1,55 @@
+# What Clouddriver may CREATE or UPDATE, whatever the ClusterRole allows (Opus review of idp-gitops #53, M3): the
+# ClusterRole bounds kinds, not content. Only requests by the Clouddriver ServiceAccount are checked.
+#   - Services: ClusterIP only, no externalIPs (no LoadBalancer, NodePort or ExternalName that the platform
+#     HTTPRoute could send public traffic to).
+#   - Deployments: a named ServiceAccount (not `default`, not vault-reader or any vault*) that equals the workload label of the pod template (so a
+#     pod runs as the WorkloadIdentity it is labelled for and the ambient policy, Vault role and IAM principal
+#     match), and no host namespaces.
+# Limits that remain, by design: a member of a namespace can still deploy any image there and mount Secrets of that
+# namespace (isolation is across namespaces, not inside one; ADR 0009).
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: idp-spinnaker-scope
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: [CREATE, UPDATE]
+        resources: [services]
+      - apiGroups: [apps]
+        apiVersions: ["v1"]
+        operations: [CREATE, UPDATE]
+        resources: [deployments]
+  matchConditions:
+    - name: only-clouddriver
+      expression: "request.userInfo.username == 'system:serviceaccount:spinnaker:clouddriver'"
+  validations:
+    - expression: "request.resource.resource != 'services' || ((!has(object.spec.type) || object.spec.type == 'ClusterIP') && (!has(object.spec.externalIPs) || size(object.spec.externalIPs) == 0))"
+      message: "Spinnaker may only create ClusterIP Services without externalIPs"
+    - expression: >-
+        request.resource.resource != 'deployments' ||
+        (has(object.spec.template.spec.serviceAccountName) &&
+         object.spec.template.spec.serviceAccountName != '' &&
+         object.spec.template.spec.serviceAccountName != 'default' &&
+         !object.spec.template.spec.serviceAccountName.startsWith('vault') &&
+         has(object.spec.template.metadata.labels) &&
+         'idp.ithaca-idp.com/workload' in object.spec.template.metadata.labels &&
+         object.spec.template.metadata.labels['idp.ithaca-idp.com/workload'] == object.spec.template.spec.serviceAccountName)
+      message: "Deployments must use a serviceAccountName that is not default or vault* and equals the pod template label idp.ithaca-idp.com/workload"
+    - expression: >-
+        request.resource.resource != 'deployments' ||
+        ((!has(object.spec.template.spec.hostNetwork) || !object.spec.template.spec.hostNetwork) &&
+         (!has(object.spec.template.spec.hostPID) || !object.spec.template.spec.hostPID) &&
+         (!has(object.spec.template.spec.hostIPC) || !object.spec.template.spec.hostIPC))
+      message: "Deployments must not use host namespaces"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: idp-spinnaker-scope
+spec:
+  policyName: idp-spinnaker-scope
+  validationActions: [Deny]
