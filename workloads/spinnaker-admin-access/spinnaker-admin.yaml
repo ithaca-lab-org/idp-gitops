@@ -1,0 +1,31 @@
+# Private access to Deck and Gate: https://spinnaker-admin.<tailnet>.ts.net (Tailscale certificate), reachable only
+# from devices on the tailnet. One host, as in upstream's ingress.yaml: Deck at "/", Gate under "/api/v1" (Gate's
+# servlet context path), so Deck needs no API host setting. Anyone on the tailnet is a Spinnaker admin (no Fiat):
+# keep the tailnet to platform admins. The Tailscale proxy is allowed in by platform/spinnaker/networkpolicy.yaml.
+# Add spinnaker-admin to TS_CLEANUP_HOSTNAMES in idp-infra. Unverified until the first run: whether the proxy
+# forwards the /api/v1 path unchanged.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: spinnaker-admin
+  namespace: spinnaker
+spec:
+  ingressClassName: tailscale
+  rules:
+    - http:
+        paths:
+          - path: /api/v1
+            pathType: Prefix
+            backend:
+              service:
+                name: gate
+                port: {number: 8084}
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: deck
+                port: {number: 9000}
+  tls:
+    - hosts:
+        - spinnaker-admin

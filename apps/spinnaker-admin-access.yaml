@@ -1,0 +1,22 @@
+# Wave 14: private access to Deck and Gate through a Tailscale Ingress, like vault-admin-access. A separate
+# Application so a slow or missing tailnet proxy never blocks Spinnaker itself.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: spinnaker-admin-access
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "14"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/ithaca-lab-org/idp-gitops.git
+    targetRevision: main
+    path: workloads/spinnaker-admin-access
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: spinnaker
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

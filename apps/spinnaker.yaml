@@ -1,0 +1,29 @@
+# Wave 13: Spinnaker for tenant delivery (idp-infra ADR 0011, docs/order-04-first-app.md). Plain Kustomize (upstream
+# spinnaker-kustomize at a pinned release as a remote base, our overrides in platform/spinnaker). About 4 GiB of
+# memory: the node pool autoscales to a second node. Gate and Clouddriver have no authentication; the NetworkPolicy
+# in the overlay is the control (platform admins reach Deck over Tailscale, see spinnaker-admin-access).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: spinnaker
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "13"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/ithaca-lab-org/idp-gitops.git
+    targetRevision: main
+    path: platform/spinnaker
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: spinnaker
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+    retry:
+      limit: 10
+      backoff: {duration: 30s, factor: 2, maxDuration: 5m}
