@@ -18,12 +18,24 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: spinnaker
+  # The API server fills in defaults in the volumeClaimTemplates of upstream's MySQL and Redis StatefulSets (apiVersion,
+  # kind, volumeMode and a status) that the manifests do not write, so Argo CD showed spinnaker OutOfSync forever and
+  # verify.sh waited 900 s for it. Harmless drift, ignored field by field.
+  ignoreDifferences:
+    - group: apps
+      kind: StatefulSet
+      jqPathExpressions:
+        - .spec.volumeClaimTemplates[]?.apiVersion
+        - .spec.volumeClaimTemplates[]?.kind
+        - .spec.volumeClaimTemplates[]?.status
+        - .spec.volumeClaimTemplates[]?.spec.volumeMode
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
     syncOptions:
       - ServerSideApply=true
+      - RespectIgnoreDifferences=true
     retry:
       limit: 10
       backoff: {duration: 30s, factor: 2, maxDuration: 5m}
