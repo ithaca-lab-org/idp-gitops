@@ -1,5 +1,5 @@
 # Wave 12: the TeamNamespace operator. Sources 2-4 come from the idp-portal repo at the SAME commit
-# as the image tag in workloads/idp-operator/*.yaml and workloads/portal/portal-api.yaml: bump all together together.
+# as the image tag in workloads/idp-operator/*.yaml and workloads/portal/portal-api.yaml: bump all together.
 # The admission policy is applied in the same sync as the operator; it only affects its ServiceAccount.
 apiVersion: argoproj.io/v1alpha1
 kind: Application

@@ -1,0 +1,45 @@
+# Ties the pod label app.kubernetes.io/name=idp-delivery to the identity idp-system/idp-delivery. The only
+# allow into Gate (platform/spinnaker/networkpolicy.yaml allow-idp-delivery-to-gate) is pinned by namespace
+# and that pod label, neither namespace being in the mesh, so without this a pod with the label but another
+# ServiceAccount could reach the unauthenticated Gate.
+# Two rules, both only for pods that carry the label or use the ServiceAccount (matchConditions, so all other
+# pods in all namespaces, kube-system included, are never evaluated):
+#   - a pod labelled idp-delivery must be in idp-system and use ServiceAccount idp-delivery;
+#   - a pod using ServiceAccount idp-delivery in idp-system must carry the label.
+# Every field access is behind has() or a request field that always exists, so a pod without labels or without
+# serviceAccountName is simply not matched (matchConditions) and cannot make the expression error.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: idp-delivery-pod-identity
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+  matchConditions:
+    - name: labelled-or-uses-the-serviceaccount
+      expression: >-
+        (has(object.metadata.labels) && 'app.kubernetes.io/name' in object.metadata.labels &&
+         object.metadata.labels['app.kubernetes.io/name'] == 'idp-delivery') ||
+        (request.namespace == 'idp-system' && has(object.spec.serviceAccountName) &&
+         object.spec.serviceAccountName == 'idp-delivery')
+  validations:
+    - expression: >-
+        request.namespace == 'idp-system' &&
+        has(object.spec.serviceAccountName) && object.spec.serviceAccountName == 'idp-delivery' &&
+        has(object.metadata.labels) && 'app.kubernetes.io/name' in object.metadata.labels &&
+        object.metadata.labels['app.kubernetes.io/name'] == 'idp-delivery'
+      reason: Forbidden
+      message: "pods labelled app.kubernetes.io/name=idp-delivery must run in idp-system as ServiceAccount idp-delivery, and that ServiceAccount's pods must carry the label"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: idp-delivery-pod-identity
+spec:
+  policyName: idp-delivery-pod-identity
+  validationActions: [Deny]
