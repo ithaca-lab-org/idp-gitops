@@ -1,5 +1,5 @@
 # Wave 12: the TeamNamespace operator. Sources 2-4 come from the idp-portal repo at the SAME commit
-# as the image tag in workloads/idp-operator/idp-operator.yaml: bump all four together.
+# as the image tag in workloads/idp-operator/*.yaml and workloads/portal/portal-api.yaml: bump all together.
 # The admission policy is applied in the same sync as the operator; it only affects its ServiceAccount.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -15,13 +15,13 @@ spec:
       targetRevision: main
       path: workloads/idp-operator
     - repoURL: https://github.com/ithaca-lab-org/idp-portal.git
-      targetRevision: e8fecb07fb548873e35fde787137ccbe027b408f
+      targetRevision: 637345b5c316228fccf9811d0dedaffeb0e8da48
       path: operator/config/crd/bases
     - repoURL: https://github.com/ithaca-lab-org/idp-portal.git
-      targetRevision: e8fecb07fb548873e35fde787137ccbe027b408f
+      targetRevision: 637345b5c316228fccf9811d0dedaffeb0e8da48
       path: operator/config/rbac
     - repoURL: https://github.com/ithaca-lab-org/idp-portal.git
-      targetRevision: e8fecb07fb548873e35fde787137ccbe027b408f
+      targetRevision: 637345b5c316228fccf9811d0dedaffeb0e8da48
       path: operator/config/policy
   destination:
     server: https://kubernetes.default.svc

@@ -33,6 +33,12 @@ rules:
   - apiGroups: ["idp.ithaca-idp.com"]
     resources: ["resourcegrants"]
     verbs: ["get", "list", "create", "delete"]
+  # Portal Delivery page (Order #04 milestone 2, ADR 0011): pipelines and runs. get/list/create only: no
+  # update, patch, delete, watch or status. Create is confined by the idp-portal-scope admission policy
+  # (idp-portal repo) and only idp-delivery may write the status (idp-delivery-scope).
+  - apiGroups: ["idp.ithaca-idp.com"]
+    resources: ["deliverypipelines", "deliveryruns"]
+    verbs: ["get", "list", "create"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

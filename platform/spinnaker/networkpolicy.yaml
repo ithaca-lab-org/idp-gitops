@@ -1,7 +1,8 @@
 # Gate and Clouddriver have no authentication: only these callers may reach them. kubectl port-forward is not
 # affected. Allowed in: the namespace's own pods and the Tailscale proxy pod of the spinnaker-admin Ingress (Deck
-# and Gate, for platform admins on the tailnet). The future DeliveryPipeline controller gets its own allow rule when
-# it exists, pinned by mesh identity rather than pod labels (ADR 0011).
+# and Gate, for platform admins on the tailnet) and the idp-delivery controller (Gate only, see the last policy).
+# Neither namespace is in the Istio ambient mesh, so the allow for idp-delivery is pinned by namespace and pod
+# label, not by SPIFFE identity (ADR 0011).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -42,4 +43,21 @@ spec:
               tailscale.com/parent-resource-type: ingress
       ports:
         - {protocol: TCP, port: 9000}
+        - {protocol: TCP, port: 8084}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-idp-delivery-to-gate
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: gate}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: idp-system}
+          podSelector:
+            matchLabels: {app.kubernetes.io/name: idp-delivery}
+      ports:
         - {protocol: TCP, port: 8084}
