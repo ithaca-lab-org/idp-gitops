@@ -31,6 +31,7 @@ Each wave waits for the previous one to be Healthy. Gaps in the numbering are de
 | 11 | portal | portal-api (Keycloak OIDC login) in `idp-system` at `https://portal.apps.ithaca-idp.com`; image from Artifact Registry, built by the idp-portal repo. Secrets page: write-only Vault role `portal-secrets` (`workloads/vault/README.md` "Portal Secrets") |
 | 12 | idp-operator | TeamNamespace operator: namespaces and guardrails (quota, default-deny, gateway allow), `WorkloadIdentity`, `ManagedSecret`, the tenant names in the `wildcard-apps` certificate. CRDs, RBAC and admission policies come from the idp-portal repo at the image commit (`apps/idp-operator.yaml`: bump the sources and the images together) |
 | 12 | idp-broker (same app) | Resource broker: `BucketClaim` and `ResourceGrant` into Cloud Storage buckets and bucket-level IAM (idp-infra ADR 0010). Own Deployment and Google service account `idp-broker@`; switch `BROKER_ENABLED` in `workloads/idp-operator/idp-broker.yaml`; the portal page is `RESOURCES_ENABLED` in `workloads/portal/portal-api.yaml` |
+| 12 | idp-delivery (same app) | Delivery controller: `DeliveryPipeline` and `DeliveryRun` into a Spinnaker application, pipeline and executions via Gate (idp-infra ADR 0011). Own Deployment and ServiceAccount, no credentials; switch `DELIVERY_ENABLED` in `workloads/idp-operator/idp-delivery.yaml`; the only caller allowed into Gate (`platform/spinnaker/networkpolicy.yaml`) |
 
 Istio 1.27.1 values are the ones proven by the ambient smoke test in `idp-infra` (`docs/smoke-ambient.md`, ADR 0002).
 

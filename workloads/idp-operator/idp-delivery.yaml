@@ -1,0 +1,95 @@
+# idp-delivery: turns DeliveryPipeline and DeliveryRun resources into a Spinnaker application, a `deploy`
+# pipeline and pipeline executions by calling Gate (idp-infra ADR 0011, Order #04 milestone 2). The only
+# caller of Gate; it sends no credentials because Gate has no login (the NETWORK is the control, see
+# platform/spinnaker/networkpolicy.yaml). A separate Deployment from the operator and the broker: it holds
+# no Google or Vault credentials and has no Secret access. The ClusterRole/Role idp-delivery and the admission
+# policies idp-delivery-scope and idp-delivery-writers come from the idp-portal repo at the same commit as the
+# image (see apps/idp-operator.yaml). The ServiceAccount name is part of that policy (idp-system/idp-delivery):
+# do not rename it. No NetworkPolicy of its own: idp-system denies ingress by default (only kubelet probes
+# arrive, metrics are off) and egress is not restricted in this namespace; the allow into Gate is in
+# platform/spinnaker/networkpolicy.yaml and matches the pod label below.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: idp-delivery
+  namespace: idp-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: idp-delivery
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: idp-delivery
+subjects:
+  - kind: ServiceAccount
+    name: idp-delivery
+    namespace: idp-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: idp-delivery
+  namespace: idp-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: idp-delivery
+subjects:
+  - kind: ServiceAccount
+    name: idp-delivery
+    namespace: idp-system
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: idp-delivery
+  namespace: idp-system
+  labels:
+    app.kubernetes.io/name: idp-delivery
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: idp-delivery
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: idp-delivery
+    spec:
+      serviceAccountName: idp-delivery
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: delivery
+          image: us-central1-docker.pkg.dev/project-324502ff-9928-4b17-a89/idp/idp-delivery:637345b5c316228fccf9811d0dedaffeb0e8da48@sha256:79164eb0ca11950f632817c7983b4dfe1194483342984d2012af58882853ee2d
+          args:
+            - --leader-elect=true
+            - --health-probe-bind-address=:8081
+          env:
+            # SWITCH: "true" = the controllers run and call Gate; "false" = idle process, no Gate call.
+            - {name: DELIVERY_ENABLED, value: "true"}
+            - {name: GATE_URL, value: "http://gate.spinnaker.svc:8084"}
+            # GitHub owners a DeliveryPipeline repository may belong to.
+            - {name: DELIVERY_ALLOWED_REPO_ORGS, value: ithaca-lab-org}
+          ports:
+            - {name: probes, containerPort: 8081}
+          readinessProbe:
+            httpGet: {path: /readyz, port: probes}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /healthz, port: probes}
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests: {cpu: 20m, memory: 64Mi}
+            limits: {memory: 256Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
