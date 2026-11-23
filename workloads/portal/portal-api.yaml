@@ -38,7 +38,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: portal-api
-          image: us-central1-docker.pkg.dev/project-324502ff-9928-4b17-a89/idp/portal-api:637345b5c316228fccf9811d0dedaffeb0e8da48@sha256:b761ee8e374049ace94f814ea9fdfc538f40bfa0beccfd80450f998c4ad6aac5
+          image: us-central1-docker.pkg.dev/project-324502ff-9928-4b17-a89/idp/portal-api:74e7532b4dc4cba26756268797043ba5d7d7d002@sha256:0e5e12a00662d14a007cc5ad5079941b6ad230b9ff3219df7a241641ba04265a
           ports:
             - {name: http, containerPort: 8080}
           env:
@@ -70,6 +70,7 @@ spec:
             # orphan/empty release). "false" = routes 404. Needs the idp-broker enabled
             # (workloads/idp-operator/idp-broker.yaml) and the org-policy guardrails (idp-infra docs/tenant-resources.md).
             - {name: RESOURCES_ENABLED, value: "true"}
+            - {name: PIPELINES_ENABLED, value: "true"}
             - {name: VAULT_ADDR, value: "https://vault.vault.svc.cluster.local:8200"}
             - {name: VAULT_CACERT, value: /etc/idp/vault-ca/ca.crt}
             - {name: VAULT_SECRETS_ROLE, value: portal-secrets}
